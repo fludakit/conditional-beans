@@ -1,0 +1,429 @@
+# Conditional Beans for CDI
+
+A portable CDI Extension that enables a bean **only when a condition matches the current deployment**.
+
+- Target runtime: **CDI 4.1** (`jakarta.enterprise:jakarta.enterprise.cdi-api:4.1.0`)
+- Verified on **Weld 6.0.3.Final** with **Weld JUnit5**
+- Core API: **three types** - `@Conditional`, `Condition`, `ConditionContext`
+- Built-in conditions: **six annotations** in `io.github.fludakit.conditional.builtin`
+- No runtime dependency beyond the CDI API
+
+This is a working prototype for the Jakarta EE CDI issues
+[jakartaee/cdi#869](https://github.com/jakartaee/cdi/issues/869) and
+[jakartaee/cdi#986](https://github.com/jakartaee/cdi/issues/986).
+
+---
+
+## Quick start
+
+Add the artifact to the deployment and declare a condition on a bean:
+
+```java
+public class BrazilCondition implements Condition {
+
+    @Override
+    public boolean test(ConditionContext context) {
+        return "BR".equals(context.getProperty("app.country").orElse(null));
+    }
+}
+```
+
+```java
+@ApplicationScoped
+@Conditional(BrazilCondition.class)
+public class BrazilTaxCalculator implements TaxCalculator {
+}
+```
+
+When `app.country` is not `BR`, the bean is **not part of the deployment**: it is not injectable, it does
+not show up in `BeanManager.getBeans(...)`, and it produces no `ProcessBean` event. An injection point that
+requires it fails the deployment with an unsatisfied-dependency error, which makes a missing bean obvious
+rather than silent.
+
+The extension is registered through `META-INF/services/jakarta.enterprise.inject.spi.Extension`, so it is
+active in every deployment that has the artifact on the classpath.
+
+---
+
+## The API
+
+### `@Conditional`
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target({ TYPE, METHOD, FIELD, ANNOTATION_TYPE })
+@Stereotype
+public @interface Conditional {
+    Class<? extends Condition>[] value();
+}
+```
+
+Applicable to a bean class, a producer method and a producer field. The array form carries several
+conditions, so the annotation does not have to be `@Repeatable`. A condition declared on a **stereotype** is
+collected in addition to the one declared on the bean, which is why a stereotype may add its own
+requirements without interfering with the bean.
+
+The annotation is itself a **CDI stereotype** and may be used as a meta-annotation, which is how an
+application composes an annotation of its own. See "Composed annotations" below.
+
+All collected conditions have to match. The first one that does not match vetoes the bean.
+
+### `Condition`
+
+```java
+@FunctionalInterface
+public interface Condition extends Predicate<ConditionContext> {
+}
+```
+
+A condition is a plain class with a no-argument constructor. Extending `Predicate` keeps it a functional
+interface, so it can also be written as a lambda where a named class is not required.
+
+**The container instantiates the condition directly, never through CDI.** At evaluation time the container
+cannot inject anything, so a condition reaches deployment state through `ConditionContext` rather than
+through injected beans. A condition must therefore be side-effect free and deterministic for a given
+deployment.
+
+### `ConditionContext`
+
+```java
+public interface ConditionContext {
+
+    Annotated getAnnotated();
+    BeanManager getBeanManager();
+
+    <T> boolean hasBean(Class<T> type, Annotation... qualifiers);
+    <T> boolean hasBean(TypeLiteral<T> type, Annotation... qualifiers);
+
+    <T> boolean hasQualifiedBean(Class<T> type, Class<? extends Annotation>... qualifierTypes);
+    <T> boolean hasQualifiedBean(TypeLiteral<T> type, Class<? extends Annotation>... qualifierTypes);
+
+    boolean hasClass(String className);
+    <T> boolean hasClass(Class<T> type);
+
+    Optional<String> getProperty(String name);
+}
+```
+
+Everything on the context is a **CDI concept**. There is deliberately no general-purpose environment, no
+property resolver and no resource loader:
+
+| Method | Meaning |
+|---|---|
+| `getAnnotated()` | The element under evaluation - the bean class, producer method or producer field. Read the annotations that declared the condition from it. |
+| `getBeanManager()` | The bean manager of the current deployment. Most of its methods are not usable while the container is still bootstrapping - use `hasBean` instead of `getBeans`. |
+| `hasBean(...)` | Whether a bean of that type and qualifiers **would be** part of this deployment. The qualifiers are instances, and they are compared including their member values. |
+| `hasQualifiedBean(...)` | The same question, but the qualifiers are given as **types**, which is what an annotation can hold. The member values are not compared. |
+| `hasClass(String)` | Whether the named class is available. The name form is the useful one, because it does not force the class to be loaded. |
+| `getProperty(String)` | A configuration entry, from system properties and then from environment variables. A dotted name also matches the relaxed environment form, so `app.country` resolves `APP_COUNTRY`. |
+
+---
+
+## Built-in conditions
+
+The package `io.github.fludakit.conditional.builtin` carries the conditions that most applications need.
+They follow the Spring naming, and each of them has a counterpart that inverts it.
+
+| Annotation | The bean is enabled when |
+|---|---|
+| `@ConditionalOnProperty(name, value, matchIfMissing)` | every named configuration entry is present and, when values are given, has one of them |
+| `@ConditionalOnMissingProperty(name)` | every named configuration entry is **not** configured |
+| `@ConditionalOnClass(name)` | every named class is on the classpath |
+| `@ConditionalOnMissingClass(name)` | every named class is **not** on the classpath |
+| `@ConditionalOnBean(value, qualifier)` | every named type has a bean, carrying the named qualifier types |
+| `@ConditionalOnMissingBean(value, qualifier)` | every named type has **no** bean carrying the named qualifier types |
+
+```java
+@ApplicationScoped
+@ConditionalOnProperty(name = "app.country", value = "BR")
+public class BrazilTaxCalculator implements TaxCalculator {
+}
+
+@ApplicationScoped
+@ConditionalOnMissingClass(name = "com.example.LegacyIntegration")
+public class ModernIntegration {
+}
+```
+
+They can be used on a bean class, a producer method, a producer field and a stereotype, and they compose
+with a condition that is written by hand.
+
+**The class conditions take class names, not classes.** This is a deliberate difference from Spring. In CDI
+an annotation that refers to a class that is not on the classpath cannot even be read: the annotation
+instance is created, but reading the attribute throws `TypeNotPresentException`. A name is resolved
+without loading the class, so `@ConditionalOnClass(name = "com.example.Optional")` is the only form that
+works for an optional dependency. The same applies to a condition of your own that tests for a class that
+may be absent - use `ConditionContext.hasClass(String)`.
+
+**`@ConditionalOnBean` and `@ConditionalOnMissingBean` use the same bean set as `hasBean`.** The set is
+the *potential* bean set, so a bean that is itself disabled by a condition still counts as present.
+
+**The qualifier attribute narrows the requirement.** `qualifier` holds the *types* of the qualifiers the
+bean has to carry, because an annotation cannot hold a qualifier instance. The member values are not
+compared, so `@ConditionalOnBean(value = DataSource.class, qualifier = Primary.class)` matches a
+`@Primary` data source whatever the value of the qualifier is. Without the attribute, the
+`@Default` qualifier is required, exactly like a lookup without qualifiers.
+
+```java
+@ApplicationScoped
+@ConditionalOnBean(value = PaymentService.class, qualifier = Primary.class)
+public class PrimaryPaymentConfiguration {
+}
+```
+
+---
+
+## Composed annotations
+
+`@Conditional` is itself a **CDI stereotype**, and it may be used as a meta-annotation. An application can
+therefore declare an annotation of its own that carries a condition, the way Spring does:
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Conditional(BrazilCondition.class)
+public @interface Brazilian {
+}
+
+@ApplicationScoped
+@Brazilian
+public class BrazilTaxCalculator implements TaxCalculator {
+}
+```
+
+The condition is found through the annotation that declares it, so it applies to every bean carrying that
+annotation. The same works for a stereotype, and the built-in conditions can be used that way as well:
+
+```java
+@Stereotype
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@ConditionalOnMissingProperty(name = "app.legacy")
+public @interface WithoutLegacy {
+}
+```
+
+A bean may carry a composed annotation **and** a condition of its own. Both are evaluated, and the bean is
+enabled only when every one of them matches.
+
+Because `@Conditional` is a stereotype, the container itself takes part: `Bean.getStereotypes()` reports
+it, and a stereotype that declares `@Conditional` inherits it. That is the CDI counterpart of the
+meta-annotation mechanism of Spring, and it keeps the mechanism inside the concepts of CDI.
+
+## Semantics
+
+### When is a condition evaluated?
+
+Once, during bootstrap. The extension observes `ProcessBeanAttributes`, which is the only portable point at
+which a bean can still be removed from the deployment.
+
+### What does `hasBean` mean?
+
+`hasBean` reports whether a **potential** bean of the requested type and qualifiers exists in the deployment,
+where *potential* means *the bean would be deployed if every `@Conditional` on it evaluated to true*.
+
+That definition has two consequences that matter:
+
+- **Conditions never hide one another.** A bean guarded by "a bean of type X exists" still sees X when X
+  is itself guarded by a condition. There is no circular dependency.
+- **The answer does not depend on declaration order.** The set of beans is collected from the
+  `ProcessAnnotatedType` events, which the container fires for every discovered type before it fires the
+  first `ProcessBeanAttributes`. The model is therefore complete before the first condition is evaluated.
+
+The model is refined during `ProcessBeanAttributes` with the container's own `BeanAttributes`, which are
+authoritative for bean types and qualifiers.
+
+Qualifier matching follows the container. A lookup **without** qualifiers implies the `@Default`
+qualifier, so a bean that declares a qualifier of its own is not reported - `hasBean(BlueMarker.class)`
+is `false` for a bean qualified `@Blue`, while `hasBean(Marker.class, Blue.Literal.INSTANCE)` is
+`true`. A lookup **with** qualifiers matches a bean that carries all of them. A `@Named` bean carries
+`@Default` as well, exactly as the container reports it, and `@Typed` restricts the bean types of a bean
+and of its producers.
+
+The prototype checks this against the container rather than against its own expectations:
+`HasBeanAgreesWithContainerTest` asks the model the same questions for a deployment with qualified,
+named and `@Typed` beans and with producers, and asserts that every answer matches
+`BeanManager.getBeans(...)`.
+
+### Deliberate limitations
+
+- **Synthetic beans are not covered.** `ProcessBeanAttributes` does not fire for beans added through
+  `AfterBeanDiscovery.addBean()`, because they have no annotated class to carry a condition. An extension
+  that adds a synthetic bean decides up front whether it should exist.
+- **Alternative selection is not modelled.** An `@Alternative` bean counts as present even when it is not the
+  selected alternative.
+- **The model assumes `bean-discovery-mode="annotated"`.** In that mode a class without a bean-defining
+  annotation is not a bean, and the extension treats it as absent. The mode is not observable from a
+  portable extension, so an archive that uses `bean-discovery-mode="all"` reports its plain classes only
+  once the container has processed them.
+- **The model spans the whole deployment.** A bean in `/lib` is visible to a bean in a `WAR`. This mirrors
+  the asymmetry that already exists in CDI bean access, rather than inventing a per-archive rule.
+- **Conditions are evaluated at bootstrap only.** Selecting an implementation per HTTP request is a different
+  problem and needs a different mechanism, such as interception or decoration.
+- **Configuration comes from system properties and environment variables.** Jakarta Config is the intended
+  long-term source; it is not ready yet, and that is a reason to keep the surface minimal.
+
+### Failure semantics
+
+Failing fast is deliberate - a silently disabled bean is far harder to diagnose than a startup error.
+
+| Failure | Result |
+|---|---|
+| Condition class has no no-argument constructor | `DefinitionException` naming the condition class |
+| Condition constructor throws | `DefinitionException` with the original cause |
+| `Condition.test(...)` throws | `DefinitionException` with the original cause |
+
+---
+
+## Proposal for jakartaee/cdi#986
+
+> This section is the proposal that would accompany the prototype on
+> [jakartaee/cdi#986](https://github.com/jakartaee/cdi/issues/986). It answers the questions that were raised
+> in the discussion.
+
+### The API
+
+Three types, modelled on Spring's `@Conditional` and Micronaut's `@Requires`, but expressed in CDI terms
+only:
+
+```java
+@Conditional(Class<? extends Condition>[] value())   // the annotation
+Condition extends Predicate<ConditionContext>         // the SPI
+ConditionContext                                       // the CDI-native view
+}
+```
+
+### When is the condition evaluated, and why there?
+
+The condition is evaluated during `ProcessBeanAttributes`, and the bean is vetoed when it does not match.
+That is the only portable point at which a discovered bean can still be removed. The alternative -
+evaluating in `AfterBeanDiscovery` - would be too late: the bean would already be deployed, and CDI has no
+portable way to withdraw it.
+
+This answers the objection that a condition cannot be evaluated during bean discovery because the container
+is not ready: the condition does not need the container. It receives a `ConditionContext`, and the only
+container state it exposes is a deliberately restricted view.
+
+### How does `hasBean` work, given that `getBeans` is not available at that point?
+
+This is the sharpest question in the discussion, and it deserves a precise answer.
+
+`BeanManager.getBeans(...)` is indeed **not** usable while the container is bootstrapping - Weld enforces
+this with a container-state check, and `AfterBeanDiscovery` is the first point at which it becomes legal.
+That is precisely why the prototype does **not** use `getBeans`.
+
+Instead, the set of beans that could be part of the deployment is collected from the `ProcessAnnotatedType`
+events. The container fires those for every discovered type before it fires the first
+`ProcessBeanAttributes`, so the model is complete when the first condition is evaluated. Bean types and
+qualifiers are derived from the annotated types following the rules of the specification, and are refined
+with the container's own `BeanAttributes` as the deployment proceeds.
+
+The result is the *potential bean set* described above: conditions never hide one another, and the answer
+does not depend on the order in which beans are declared. Ordering controls such as Spring Boot's
+`@AutoConfigureAfter` are therefore not needed.
+
+The prototype verifies this against the container itself. `HasBeanAgreesWithContainerTest` asks the model
+the same questions that `BeanManager.getBeans(...)` answers for qualified beans, named beans, `@Typed`
+beans and producers, and asserts that the two agree - with exactly one documented difference: a bean that
+is vetoed by a condition is still reported as present, because the model describes the beans that *could*
+be part of the deployment.
+
+### Which conditions should the specification define?
+
+The prototype ships the three conditions that cover the common cases - property, class and bean presence -
+each with a counterpart that inverts it, named after the Spring annotations. They are deliberately small: a
+condition that needs more than the prototype can express is written by the application.
+
+One difference from Spring is worth pointing out. Spring's class conditions take `Class<?>` values, and they
+work because Spring reads the annotation metadata without loading the classes. CDI has no such reading: an
+annotation instance is created by the container, and reading an attribute that refers to a class which is
+not on the classpath throws `TypeNotPresentException`. A CDI specification would therefore have to name the
+classes instead, or define another way of expressing the requirement.
+
+### Should `@Conditional` be a stereotype?
+
+Yes, and the prototype makes it one. In Spring, `@Conditional` is a meta-annotation: an application composes
+its own annotations with it. The CDI counterpart of a composed annotation is the stereotype, so `@Conditional`
+is declared as a `@Stereotype` and may be used as a meta-annotation.
+
+This has a pleasant consequence: the container itself takes part. `Bean.getStereotypes()` reports
+`@Conditional`, and a stereotype that declares `@Conditional` inherits it, exactly as CDI defines
+stereotype inheritance. The condition is nevertheless evaluated by the extension, because the veto point is
+still `ProcessBeanAttributes`.
+
+### What about synthetic beans?
+
+Not covered, and deliberately so. `ProcessBeanAttributes` does not fire for them, and an extension that adds
+a synthetic bean is in a better position to decide whether it should exist at all.
+
+### What about EAR and WAR modularity?
+
+The model spans the whole deployment, so a bean in `/lib` is visible to a bean in a `WAR`. This mirrors the
+asymmetry that already exists in CDI bean access, where a bean in `/lib` cannot see the beans of a `WAR`.
+Introducing a per-archive rule for conditions only would create a second, inconsistent notion of bean
+visibility.
+
+### What about CDI Lite?
+
+The proposal is for CDI Full. CDI Lite has no portable extensions, and a build-time evaluation would need a
+different mechanism. A condition that only depends on the classpath - such as the presence of an optional
+dependency - could be evaluated at build time in a future iteration.
+
+### What about a condition that needs the container?
+
+A condition may read the element it is attached to through `ConditionContext.getAnnotated()`, and it can
+look at the deployment through `hasBean(...)`. It cannot inject beans, because at evaluation time the
+container is not able to create them. A condition that needs a bean instance has to be expressed as a
+producer or a decorated bean instead.
+
+### Is the name right?
+
+`@Conditional` follows Spring, which is the most widely known spelling. Micronaut uses `@Requires`, and
+DeltaSpike uses `@Exclude`. The three frameworks describe the same idea, and the question of whether CDI
+should standardize on one of these names is worth a separate discussion.
+
+---
+
+## Build
+
+```bash
+mvn -B -ntp clean verify
+```
+
+The build requires Java 21 or later and resolves against Jakarta EE 11, which brings in CDI 4.1. The test
+suite runs against Weld 6 through Weld JUnit5.
+
+## Project layout
+
+```
+src/main/java/io/github/fludakit/conditional/
+    Conditional.java              <- the annotation, a CDI stereotype
+    Condition.java                <- the SPI
+    ConditionContext.java         <- the CDI-native view
+    builtin/
+        ConditionalOnProperty.java        <- the built-in conditions
+        ConditionalOnMissingProperty.java
+        ConditionalOnClass.java
+        ConditionalOnMissingClass.java
+        ConditionalOnBean.java
+        ConditionalOnMissingBean.java
+        OnPropertyCondition.java          <- the conditions behind them
+        OnMissingPropertyCondition.java
+        OnClassCondition.java
+        OnMissingClassCondition.java
+        OnBeanCondition.java
+        OnMissingBeanCondition.java
+    internal/
+        ConditionalBeansExtension.java   <- the portable extension
+        ConditionResolver.java           <- collects the conditions of a bean
+        DefaultConditionContext.java     <- the context implementation
+        DeploymentModel.java             <- the potential bean set
+        CandidateBean.java               <- bean types and qualifiers of one bean
+        Qualifiers.java                  <- qualifier derivation
+        AnnotationDrivenCondition.java   <- a condition configured by its annotation
+```
+
+## License
+
+Apache License 2.0.
