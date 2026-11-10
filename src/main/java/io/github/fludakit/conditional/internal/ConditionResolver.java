@@ -23,6 +23,11 @@ import java.util.Set;
  * application define an annotation of its own.
  * </p>
  * <p>
+ * {@link Conditional} is repeatable, so an element may carry several of them. Java replaces them with a
+ * single {@link Conditional.Container} annotation, and the container is what the resolver finds. The
+ * conditions it holds are therefore expanded here.
+ * </p>
+ * <p>
  * Every condition is kept together with the annotation that declared it, because a condition that is
  * configured by its declaration - the built-in conditions are - needs that declaration to know its
  * requirements.
@@ -86,6 +91,13 @@ final class ConditionResolver {
             return;
         }
 
+        if (Conditional.Container.class.equals(type)) {
+            for (Conditional conditional : ((Conditional.Container) annotation).value()) {
+                add(conditional, conditional, entries, seen);
+            }
+            return;
+        }
+
         if (type.isAnnotationPresent(Stereotype.class)) {
             for (Annotation declared : type.getAnnotations()) {
                 collect(declared, entries, seen, depth + 1);
@@ -96,6 +108,13 @@ final class ConditionResolver {
         Conditional composed = type.getAnnotation(Conditional.class);
         if (composed != null) {
             add(composed, annotation, entries, seen);
+        }
+
+        Conditional.Container composedContainer = type.getAnnotation(Conditional.Container.class);
+        if (composedContainer != null) {
+            for (Conditional conditional : composedContainer.value()) {
+                add(conditional, annotation, entries, seen);
+            }
         }
     }
 

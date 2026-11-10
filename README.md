@@ -54,15 +54,32 @@ active in every deployment that has the artifact on the classpath.
 @Retention(RUNTIME)
 @Target({ TYPE, METHOD, FIELD, ANNOTATION_TYPE })
 @Stereotype
+@Repeatable(Conditional.Container.class)
 public @interface Conditional {
     Class<? extends Condition>[] value();
 }
 ```
 
-Applicable to a bean class, a producer method and a producer field. The array form carries several
-conditions, so the annotation does not have to be `@Repeatable`. A condition declared on a **stereotype** is
-collected in addition to the one declared on the bean, which is why a stereotype may add its own
-requirements without interfering with the bean.
+Applicable to a bean class, a producer method and a producer field.
+
+**The annotation is repeatable**, so several conditions can be declared on one element, one annotation each:
+
+```java
+@ApplicationScoped
+@Conditional(BrazilCondition.class)
+@Conditional(DatabaseAvailable.class)
+public class BrazilTaxCalculator implements TaxCalculator {
+}
+```
+
+The array form carries the same meaning, and the two styles may be mixed - `@Conditional({ A.class, B.class })`
+and two separate `@Conditional` annotations are collected together, and all of them have to match. A condition
+declared on a **stereotype** is collected in addition to the ones declared on the bean, which is why a
+stereotype may add its own requirements without interfering with the bean.
+
+The repeatable mechanism needs a container annotation, `Conditional.Container`, which the Java compiler
+generates and fills. It is not meant to be used directly, and it stays invisible in the deployment: the
+container reports the same stereotypes as the plain annotation does.
 
 The annotation is itself a **CDI stereotype** and may be used as a meta-annotation, which is how an
 application composes an annotation of its own. See "Composed annotations" below.
