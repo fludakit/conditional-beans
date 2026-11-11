@@ -82,11 +82,13 @@ The repeatable mechanism needs a container annotation, `@Conditionals`, which th
 generates and fills. It is not meant to be used directly, and it stays invisible in the deployment: the
 container reports the same stereotypes as the plain annotation does.
 
-The naming follows the Jakarta EE convention for a repeatable annotation. The Jakarta Persistence, Jakarta EJB
-and Jakarta JMS specifications all declare a top-level container in the plural form - `@NamedQueries`,
-`@Schedules`, `@JMSDestinationDefinitions` - and the CDI specification itself shows the same pattern for a
-repeating qualifier, with `@Location` and `@Locations`. Jakarta Validation and Jakarta Data use a nested
-`List` container instead. A top-level container keeps the public API to one annotation more.
+The naming follows the convention for a repeatable annotation. Jakarta Persistence, Jakarta EJB and
+Jakarta JMS declare a top-level container in the plural form - `@NamedQueries`, `@Schedules`,
+`@JMSDestinationDefinitions` - and the CDI specification shows the same pattern for a repeating qualifier,
+with `@Location` and `@Locations`. Spring Framework and Micronaut follow it too, with `@ComponentScans`,
+`@PropertySources`, `@Schedules`, `@Requirements` and `@QueryHints`. The nested `List` container is the
+alternative shape, used by Jakarta Validation, Jakarta Data and Micronaut. The proposal section below lists
+the precedents.
 
 The annotation is itself a **CDI stereotype** and may be used as a meta-annotation, which is how an
 application composes an annotation of its own. See "Composed annotations" below.
@@ -308,8 +310,8 @@ Failing fast is deliberate - a silently disabled bean is far harder to diagnose 
 
 ### The API
 
-Three types, modelled on Spring's `@Conditional` and Micronaut's `@Requires`, but expressed in CDI terms
-only:
+Three core types, modelled on Spring's `@Conditional` and Micronaut's `@Requires`, but expressed in CDI
+terms only:
 
 ```java
 @Conditional(Class<? extends Condition>[] value())   // the annotation
@@ -319,15 +321,37 @@ ConditionContext                                       // the CDI-native view
 ```
 
 `@Conditional` is repeatable, so several conditions may be declared on one element, one annotation each.
-The mechanism needs a container annotation, and the container is named the way the Jakarta EE specifications
-name theirs: a top-level annotation in the plural form, such as `@NamedQueries` in Jakarta Persistence,
-`@Schedules` in Jakarta EJB and `@JMSDestinationDefinitions` in Jakarta JMS. The CDI specification shows
-the same pattern for a repeating qualifier, with `@Location` and `@Locations`.
+The mechanism needs a container annotation, and the container is named the way the Java ecosystem names
+theirs: a top-level annotation in the plural form.
 
 ```java
 @Conditionals(Conditional[] value())                  // the container
 }
 ```
+
+| Annotation | Container | Source |
+|---|---|---|
+| `@Location` | `@Locations` | CDI 4.1 |
+| `@NamedQuery` | `@NamedQueries` | Jakarta Persistence |
+| `@Schedule` | `@Schedules` | Jakarta EJB |
+| `@JMSDestinationDefinition` | `@JMSDestinationDefinitions` | Jakarta JMS |
+| `@ComponentScan` | `@ComponentScans` | Spring Framework |
+| `@PropertySource` | `@PropertySources` | Spring Framework |
+| `@Scheduled` | `@Schedules` | Spring Framework |
+| `@JmsListener` | `@JmsListeners` | Spring Framework |
+| `@Requires` | `@Requirements` | Micronaut |
+| `@QueryHint` | `@QueryHints` | Micronaut Data |
+| `@JoinColumn` | `@JoinColumns` | Micronaut Data |
+
+Micronaut's `@Requires` is its own conditional annotation, so the closest analogue in the ecosystem names
+its container the same way. Spring's `@Conditional` is not repeatable at all - Spring expresses several
+conditions through composed meta-annotations instead - so of the two frameworks, only Micronaut has a
+repeatable condition annotation.
+
+The alternative shape is a nested `List`, used by Jakarta Validation (`@Pattern.List`), Jakarta Data
+(`@Select.List`) and Micronaut (`@OrderBy.List`). Spring has a few one-off names of its own, `@SqlGroup` and
+a nested `@ImportHttpServices.Container`. A top-level plural container is the shape used by most
+specifications and by both frameworks, and it keeps the public API to one annotation more.
 
 ### When is the condition evaluated, and why there?
 
