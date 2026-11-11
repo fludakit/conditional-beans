@@ -13,7 +13,7 @@ final class OnBeanCondition implements Condition {
     public boolean test(ConditionContext context) {
         ConditionDefinition annotation = Declarations.require(context.getAnnotation(), ConditionalOnBean.class);
         for (Class<?> type : annotation.classes("value")) {
-            if (!context.getBeanContext().hasQualifiedBean(type, annotation.classes("qualifier"))) {
+            if (!context.hasQualifiedBean(type, annotation.classes("qualifier"))) {
                 return false;
             }
         }

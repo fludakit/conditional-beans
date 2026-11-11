@@ -1,10 +1,10 @@
 package io.github.fludakit.conditional.impl;
 
-import io.github.fludakit.conditional.BeanContext;
 import io.github.fludakit.conditional.ConditionContext;
 import io.github.fludakit.conditional.ConditionDefinition;
 
 import java.lang.annotation.Annotation;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -13,18 +13,23 @@ import java.util.Optional;
  */
 final class DefaultConditionContext implements ConditionContext {
 
-    private final BeanContext beanContext;
+    private final DeploymentModel model;
 
     private final Annotation declaration;
 
     DefaultConditionContext(DeploymentModel model, Annotation declaration) {
-        this.beanContext = new DeploymentBeanContext(model);
+        this.model = model;
         this.declaration = declaration;
     }
 
     @Override
-    public BeanContext getBeanContext() {
-        return beanContext;
+    public boolean hasBean(Class<?> type, Class<?>... qualifierTypes) {
+        return model.hasQualifiedBean(type, Arrays.asList(qualifierTypes));
+    }
+
+    @Override
+    public boolean hasQualifiedBean(Class<?> type, Class<?>... qualifierTypes) {
+        return model.hasQualifiedBean(type, Arrays.asList(qualifierTypes));
     }
 
     @Override

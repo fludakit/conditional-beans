@@ -37,15 +37,15 @@ class HasBeanAgreesWithContainerTest {
 
         @Override
         public boolean test(ConditionContext context) {
-            ANSWERS.put("plain", context.getBeanContext().hasBean(Fixtures.Plain.class));
-            ANSWERS.put("marker", context.getBeanContext().hasBean(Fixtures.Marker.class));
-            ANSWERS.put("blueMarker", context.getBeanContext().hasBean(Fixtures.BlueMarker.class));
-            ANSWERS.put("markerWithBlue", context.getBeanContext().hasBean(Fixtures.Marker.class, Fixtures.Blue.class));
-            ANSWERS.put("named", context.getBeanContext().hasBean(Fixtures.NamedBean.class));
-            ANSWERS.put("produced", context.getBeanContext().hasBean(Fixtures.Message.class));
-            ANSWERS.put("restricted", context.getBeanContext().hasBean(Fixtures.Restricted.class));
-            ANSWERS.put("restrictedType", context.getBeanContext().hasBean(Fixtures.OnlyInterface.class));
-            ANSWERS.put("vetoed", context.getBeanContext().hasBean(Fixtures.Disabled.class));
+            ANSWERS.put("plain", context.hasBean(Fixtures.Plain.class));
+            ANSWERS.put("marker", context.hasBean(Fixtures.Marker.class));
+            ANSWERS.put("blueMarker", context.hasBean(Fixtures.BlueMarker.class));
+            ANSWERS.put("markerWithBlue", context.hasBean(Fixtures.Marker.class, Fixtures.Blue.class));
+            ANSWERS.put("named", context.hasBean(Fixtures.NamedBean.class));
+            ANSWERS.put("produced", context.hasBean(Fixtures.Message.class));
+            ANSWERS.put("restricted", context.hasBean(Fixtures.Restricted.class));
+            ANSWERS.put("restrictedType", context.hasBean(Fixtures.OnlyInterface.class));
+            ANSWERS.put("vetoed", context.hasBean(Fixtures.Disabled.class));
             return true;
         }
     }

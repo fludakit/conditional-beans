@@ -4,7 +4,7 @@ A portable CDI Extension that enables a bean **only when a condition matches the
 
 - Target runtime: **CDI 4.1** (`jakarta.enterprise:jakarta.enterprise.cdi-api:4.1.0`)
 - Verified on **Weld 6.0.3.Final** with **Weld JUnit5**
-- Core API: `@Conditional`, `@Conditionals`, `Condition`, `ConditionContext`, `BeanContext`, `ConditionDefinition`
+- Core API: `@Conditional`, `@Conditionals`, `Condition`, `ConditionContext`, `ConditionDefinition`
 - Built-in conditions: **six annotations** in `io.github.fludakit.conditional.annotation`
 - Modules: `api` (spec API/SPI), `impl` (CDI Full + CDI Lite), `processor` (APT), `integration-tests`
 - No runtime dependency beyond the CDI API
@@ -116,7 +116,9 @@ deployment.
 ```java
 public interface ConditionContext {
 
-    BeanContext getBeanContext();
+    boolean hasBean(Class<?> type, Class<?>... qualifierTypes);
+    boolean hasQualifiedBean(Class<?> type, Class<?>... qualifierTypes);
+
     ConditionDefinition getAnnotation();
 
     boolean hasClass(String className);
@@ -131,24 +133,14 @@ CDI Lite build extension:
 
 | Method | Meaning |
 |---|---|
-| `getBeanContext()` | The beans that **could** be part of this deployment (the potential bean set), as a `BeanContext`. |
+| `hasBean(...)` | Whether a bean of that type carrying a qualifier of each given type **would be** part of this deployment. |
+| `hasQualifiedBean(...)` | The same question; the qualifiers are given as **types**, whose member values are not compared. |
 | `getAnnotation()` | The annotation that declared the condition being evaluated, as a reflection-free `ConditionDefinition`. |
 | `hasClass(String)` | Whether the named class is available. The name form is the useful one, because it does not force the class to be loaded. |
 | `getProperty(String)` | A configuration entry, from system properties and then from environment variables. A dotted name also matches the relaxed environment form, so `app.country` resolves `APP_COUNTRY`. |
 
-### `BeanContext`
-
-```java
-public interface BeanContext {
-
-    boolean hasBean(Class<?> type, Class<?>... qualifierTypes);
-    boolean hasQualifiedBean(Class<?> type, Class<?>... qualifierTypes);
-}
-```
-
-Whether a bean of the given type carrying a qualifier of each given type **would be** part of the
-deployment. The qualifiers are given as **types**, because a qualifier instance cannot be expressed at
-build time; their member values are not compared. Without a qualifier type, the `@Default` qualifier is
+The bean-existence question takes qualifiers as **types**, because a qualifier instance cannot be expressed
+at build time; their member values are not compared. Without a qualifier type, the `@Default` qualifier is
 required, exactly like a lookup without qualifiers.
 
 ### `ConditionDefinition`
@@ -484,8 +476,7 @@ api/                                       <- fluda-conditional-beans-api (spec 
     Conditional.java                       <- the annotation, a CDI stereotype
     Conditionals.java                      <- the container of the repeated annotation
     Condition.java                         <- the SPI
-    ConditionContext.java                  <- the CDI-native view
-    BeanContext.java                       <- the potential-bean-set view
+    ConditionContext.java                  <- the CDI-native view (bean existence + annotation + class/config)
     ConditionDefinition.java               <- reflection-free view of a declaring annotation
     annotation/                            <- the six built-in conditions
       ConditionalOnProperty.java           (+ the five siblings)

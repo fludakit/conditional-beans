@@ -63,7 +63,7 @@ public final class Conditions {
     public static class HasMarker implements Condition {
         @Override
         public boolean test(ConditionContext context) {
-            return context.getBeanContext().hasBean(Fixtures.Marker.class);
+            return context.hasBean(Fixtures.Marker.class);
         }
     }
 
@@ -71,7 +71,7 @@ public final class Conditions {
     public static class HasBlueMarker implements Condition {
         @Override
         public boolean test(ConditionContext context) {
-            return context.getBeanContext().hasBean(Fixtures.Marker.class, Fixtures.Blue.class);
+            return context.hasBean(Fixtures.Marker.class, Fixtures.Blue.class);
         }
     }
 

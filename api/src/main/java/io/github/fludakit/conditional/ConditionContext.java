@@ -7,9 +7,10 @@ import java.util.Optional;
  * <p>
  * Everything exposed here is usable by both a CDI Full container and a CDI Lite build extension, which is
  * why there is deliberately no {@code BeanManager}, no {@code Annotated} and no reflective
- * {@code Annotation} instance: a condition sees the beans of the deployment through {@link BeanContext},
- * the annotation that declared it through {@link ConditionDefinition}, and the deployment configuration as
- * system properties and environment variables.
+ * {@code Annotation} instance: a condition asks about the beans of the deployment through
+ * {@link #hasBean(Class, Class[])} and {@link #hasQualifiedBean(Class, Class[])}, reads the annotation that
+ * declared it through {@link #getAnnotation()}, and reaches the deployment configuration as system
+ * properties and environment variables.
  * </p>
  * <p>
  * The context is valid only for the duration of one evaluation and must not be retained.
@@ -21,16 +22,32 @@ import java.util.Optional;
 public interface ConditionContext {
 
     /**
-     * The beans that could be part of this deployment.
+     * Whether a bean of the given type carrying a qualifier of each given type would be part of this
+     * deployment.
      * <p>
-     * This is the "potential bean set": a bean is reported regardless of whether a {@link Conditional} on
-     * it matches, so conditions never hide one another and the answer never depends on the order in which
-     * beans are declared.
+     * "Would be" means the bean is reported regardless of any {@link Conditional} on it, so conditions never
+     * hide one another and the answer never depends on the order in which beans are declared.
+     * </p>
+     * <p>
+     * Qualifiers are given as types, never as instances, so the answer is expressible at build time. Their
+     * member values are not compared. Without a qualifier type, the {@code @Default} qualifier is required,
+     * exactly like a lookup without qualifiers.
      * </p>
      *
-     * @return the bean view of the current deployment
+     * @param type the required bean type
+     * @param qualifierTypes the required qualifier types; may be empty
+     * @return {@code true} when a matching bean is part of the deployment
      */
-    BeanContext getBeanContext();
+    boolean hasBean(Class<?> type, Class<?>... qualifierTypes);
+
+    /**
+     * As {@link #hasBean(Class, Class[])}; the separate name exists for readability at the call site.
+     *
+     * @param type the required bean type
+     * @param qualifierTypes the required qualifier types; may be empty
+     * @return {@code true} when a matching bean is part of the deployment
+     */
+    boolean hasQualifiedBean(Class<?> type, Class<?>... qualifierTypes);
 
     /**
      * The annotation that declared the condition being evaluated.
