@@ -11,12 +11,21 @@
         <relativePath/>
     </parent>
 
-    <artifactId>fluda-conditional-beans</artifactId>
-    <packaging>jar</packaging>
+    <groupId>io.github.fludakit</groupId>
+    <artifactId>fluda-conditional-beans-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
 
-    <name>FluDa :: Conditional Beans</name>
-    <description>Portable CDI Extension providing declarative conditional bean activation for CDI 4.1.</description>
+    <name>FluDa :: Conditional Beans :: Parent</name>
+    <description>Declarative conditional bean activation for CDI 4.1.</description>
     <url>https://github.com/fludakit/conditional-beans</url>
+
+    <modules>
+        <module>api</module>
+        <module>impl</module>
+        <module>processor</module>
+        <module>integration-tests</module>
+    </modules>
 
     <licenses>
         <license>
@@ -39,43 +48,25 @@
         <tag>HEAD</tag>
     </scm>
 
-    <dependencies>
-        <dependency>
-            <groupId>jakarta.enterprise</groupId>
-            <artifactId>jakarta.enterprise.cdi-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.inject</groupId>
-            <artifactId>jakarta.inject-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.weld</groupId>
-            <artifactId>weld-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.github.fludakit</groupId>
+                <artifactId>fluda-conditional-beans-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.fludakit</groupId>
+                <artifactId>fluda-conditional-beans-impl</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.fludakit</groupId>
+                <artifactId>fluda-conditional-beans-processor</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <distributionManagement>
         <repository>
