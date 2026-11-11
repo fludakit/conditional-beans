@@ -169,7 +169,7 @@ class ConditionalRepeatableTest {
     void theContainerStaysInvisibleForTheContainer() {
         for (Bean<?> bean : beanManager.getBeans(BothMatch.class)) {
             assertThat(bean.getStereotypes()).contains(Conditional.class);
-            assertThat(bean.getStereotypes()).doesNotContain(Conditional.Container.class);
+            assertThat(bean.getStereotypes()).doesNotContain(Conditionals.class);
         }
     }
 }

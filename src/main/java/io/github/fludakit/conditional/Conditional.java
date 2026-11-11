@@ -44,6 +44,7 @@ import java.lang.annotation.Target;
  * not appear in {@code BeanManager.getBeans(...)} and it produces no {@code ProcessBean} event.
  * </p>
  *
+ * @see Conditionals
  * @see Condition
  * @see ConditionContext
  */
@@ -51,7 +52,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ ElementType.TYPE, ElementType.METHOD, ElementType.FIELD, ElementType.ANNOTATION_TYPE })
 @Stereotype
-@Repeatable(Conditional.Container.class)
+@Repeatable(Conditionals.class)
 public @interface Conditional {
 
     /**
@@ -60,25 +61,4 @@ public @interface Conditional {
      * @return the required conditions
      */
     Class<? extends Condition>[] value();
-
-    /**
-     * Holds the repeated {@link Conditional} annotations of a single element.
-     * <p>
-     * The container is required by the repeatable annotation mechanism of Java. It is not meant to be used
-     * directly; declaring several {@code @Conditional} annotations is enough.
-     * </p>
-     */
-    @Documented
-    @Retention(RetentionPolicy.RUNTIME)
-    @Target({ ElementType.TYPE, ElementType.METHOD, ElementType.FIELD, ElementType.ANNOTATION_TYPE })
-    @Conditional({})
-    @interface Container {
-
-        /**
-         * The repeated conditions.
-         *
-         * @return the required conditions
-         */
-        Conditional[] value();
-    }
 }

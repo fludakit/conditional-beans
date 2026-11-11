@@ -2,6 +2,7 @@ package io.github.fludakit.conditional.internal;
 
 import io.github.fludakit.conditional.Condition;
 import io.github.fludakit.conditional.Conditional;
+import io.github.fludakit.conditional.Conditionals;
 import jakarta.enterprise.inject.Stereotype;
 import jakarta.enterprise.inject.spi.Annotated;
 import jakarta.enterprise.inject.spi.AnnotatedMember;
@@ -24,7 +25,7 @@ import java.util.Set;
  * </p>
  * <p>
  * {@link Conditional} is repeatable, so an element may carry several of them. Java replaces them with a
- * single {@link Conditional.Container} annotation, and the container is what the resolver finds. The
+ * single {@link Conditionals} annotation, and the container is what the resolver finds. The
  * conditions it holds are therefore expanded here.
  * </p>
  * <p>
@@ -91,8 +92,8 @@ final class ConditionResolver {
             return;
         }
 
-        if (Conditional.Container.class.equals(type)) {
-            for (Conditional conditional : ((Conditional.Container) annotation).value()) {
+        if (Conditionals.class.equals(type)) {
+            for (Conditional conditional : ((Conditionals) annotation).value()) {
                 add(conditional, conditional, entries, seen);
             }
             return;
@@ -110,7 +111,7 @@ final class ConditionResolver {
             add(composed, annotation, entries, seen);
         }
 
-        Conditional.Container composedContainer = type.getAnnotation(Conditional.Container.class);
+        Conditionals composedContainer = type.getAnnotation(Conditionals.class);
         if (composedContainer != null) {
             for (Conditional conditional : composedContainer.value()) {
                 add(conditional, annotation, entries, seen);
