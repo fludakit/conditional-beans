@@ -326,7 +326,8 @@ the same pattern for a repeating qualifier, with `@Location` and `@Locations`.
 
 ```java
 @Conditionals(Conditional[] value())                  // the container
-}```
+}
+```
 
 ### When is the condition evaluated, and why there?
 
