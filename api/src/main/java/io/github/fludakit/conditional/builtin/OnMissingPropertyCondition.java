@@ -6,7 +6,7 @@ import io.github.fludakit.conditional.ConditionContext;
 /**
  * The condition behind {@link ConditionalOnMissingProperty}.
  */
-final class OnMissingPropertyCondition implements Condition<ConditionalOnMissingProperty> {
+public final class OnMissingPropertyCondition implements Condition<ConditionalOnMissingProperty> {
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnMissingProperty annotation) {

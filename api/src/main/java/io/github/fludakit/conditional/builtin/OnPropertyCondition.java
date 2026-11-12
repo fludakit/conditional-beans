@@ -8,7 +8,7 @@ import java.util.Optional;
 /**
  * The condition behind {@link ConditionalOnProperty}.
  */
-final class OnPropertyCondition implements Condition<ConditionalOnProperty> {
+public final class OnPropertyCondition implements Condition<ConditionalOnProperty> {
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnProperty annotation) {

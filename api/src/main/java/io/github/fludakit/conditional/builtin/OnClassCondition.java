@@ -6,7 +6,7 @@ import io.github.fludakit.conditional.ConditionContext;
 /**
  * The condition behind {@link ConditionalOnClass}.
  */
-final class OnClassCondition implements Condition<ConditionalOnClass> {
+public final class OnClassCondition implements Condition<ConditionalOnClass> {
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnClass annotation) {

@@ -6,11 +6,9 @@ import io.github.fludakit.conditional.Conditional;
 import io.github.fludakit.conditional.Conditionals;
 
 import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,7 +29,6 @@ import jakarta.enterprise.lang.model.AnnotationMember;
 import jakarta.enterprise.lang.model.declarations.ClassInfo;
 import jakarta.enterprise.lang.model.declarations.MethodInfo;
 import jakarta.enterprise.lang.model.types.Type;
-import jakarta.enterprise.util.Nonbinding;
 import jakarta.inject.Qualifier;
 
 public class LiteConditionalExtension implements BuildCompatibleExtension {
@@ -53,7 +50,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         }
 
         deferredConditionalClasses.add(classInfo);
-        ConditionContext context = createBuildContext();
+        ConditionContext context = createBuildContext(classConfig);
 
         if (!evaluateAllAnnotations(conditionalAnns, context)) {
             discoveredClasses.remove(classInfo);
@@ -78,7 +75,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         }
 
         deferredConditionalProducers.add(methodInfo);
-        ConditionContext context = createBuildContext();
+        ConditionContext context = createBuildContext(methodConfig);
 
         if (!evaluateAllAnnotations(conditionalAnns, context)) {
             discoveredProducers.remove(methodInfo);
@@ -94,19 +91,19 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
 
     @Validation
     public void validateDeferredConditions(Messages messages) {
-        ConditionContext fullGraphContext = createBuildContext();
-
         for (ClassInfo classInfo : deferredConditionalClasses) {
+            ConditionContext classContext = createBuildContext(classInfo);
             List<AnnotationInfo> anns = unwrapConditionalAnnotations(classInfo.annotations());
-            if (!evaluateAllAnnotations(anns, fullGraphContext)) {
+            if (!evaluateAllAnnotations(anns, classContext)) {
                 messages.error("Bean class " + classInfo.name()
                         + " failed its @Conditional check after full bean registration.");
             }
         }
 
         for (MethodInfo methodInfo : deferredConditionalProducers) {
+            ConditionContext methodContext = createBuildContext(methodInfo);
             List<AnnotationInfo> anns = unwrapConditionalAnnotations(methodInfo.annotations());
-            if (!evaluateAllAnnotations(anns, fullGraphContext)) {
+            if (!evaluateAllAnnotations(anns, methodContext)) {
                 messages.error("Producer method " + methodInfo.declaringClass().name() + "#" + methodInfo.name()
                         + " failed its @Conditional check after full bean registration.");
             }
@@ -164,7 +161,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         return true;
     }
 
-    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private boolean evaluateConditionalMeta(
             AnnotationInfo conditionalMeta,
             AnnotationInfo targetAnnotation,
@@ -186,7 +183,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         return true;
     }
 
-    private ConditionContext createBuildContext() {
+    private ConditionContext createBuildContext(Object currentTarget) {
         return new ConditionContext() {
             @Override
             public Optional<String> getEnvironmentValue(String key) {
@@ -211,30 +208,44 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
             }
 
             @Override
-            public boolean hasBean(Class<?> beanType, Class<? extends Annotation>... qualifiers) {
+            @SafeVarargs
+            public final boolean hasBean(Class<?> beanType, Class<? extends Annotation>... qualifiers) {
                 String targetTypeName = beanType.getName();
 
                 if (!registeredBeans.isEmpty()) {
-                    return registeredBeans.stream().anyMatch(bean ->
-                            bean.types().stream().anyMatch(t -> matchesType(t, targetTypeName))
-                                    && matchesQualifiers(bean.qualifiers(), qualifiers)
-                    );
+                    return registeredBeans.stream()
+                            .filter(bean -> !isSameTarget(bean, currentTarget))
+                            .anyMatch(bean ->
+                                    bean.types().stream().anyMatch(t -> matchesType(t, targetTypeName))
+                                            && matchesQualifiers(bean.qualifiers(), qualifiers)
+                            );
                 }
 
-                boolean classMatch = discoveredClasses.stream().anyMatch(clazz ->
-                        isSubtypeOf(clazz, targetTypeName)
-                                && matchesQualifiers(clazz.annotations(), qualifiers)
-                );
+                boolean classMatch = discoveredClasses.stream()
+                        .filter(clazz -> !clazz.equals(currentTarget))
+                        .anyMatch(clazz ->
+                                isSubtypeOf(clazz, targetTypeName)
+                                        && matchesQualifiers(clazz.annotations(), qualifiers)
+                        );
                 if (classMatch) {
                     return true;
                 }
 
-                return discoveredProducers.stream().anyMatch(method ->
-                        matchesType(method.returnType(), targetTypeName)
-                                && matchesQualifiers(method.annotations(), qualifiers)
-                );
+                return discoveredProducers.stream()
+                        .filter(method -> !method.equals(currentTarget))
+                        .anyMatch(method ->
+                                matchesType(method.returnType(), targetTypeName)
+                                        && matchesQualifiers(method.annotations(), qualifiers)
+                        );
             }
         };
+    }
+
+    private boolean isSameTarget(BeanInfo bean, Object currentTarget) {
+        if (currentTarget instanceof ClassInfo classInfo && bean.declaringClass() != null) {
+            return bean.declaringClass().name().equals(classInfo.name()) && !bean.isProducerMethod() && !bean.isProducerField();
+        }
+        return false;
     }
 
     private boolean matchesType(Type type, String targetTypeName) {
@@ -243,6 +254,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         }
         return isSubtypeOf(type.asClass().declaration(), targetTypeName);
     }
+
     private boolean isSubtypeOf(ClassInfo classInfo, String targetTypeName) {
         if (classInfo == null) {
             return false;
@@ -268,12 +280,15 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
             Collection<AnnotationInfo> presentAnnotations,
             Class<? extends Annotation>[] requiredQualifiers) {
 
-        List<AnnotationInfo> explicitQualifiers = presentAnnotations.stream()
+        List<AnnotationInfo> typeSafeQualifiers = presentAnnotations.stream()
                 .filter(ann -> ann.declaration() != null && ann.declaration().hasAnnotation(Qualifier.class))
+                .filter(ann -> !ann.name().equals(jakarta.inject.Named.class.getName()))
                 .toList();
 
         if (requiredQualifiers.length == 0) {
-            return explicitQualifiers.isEmpty() || explicitQualifiers.stream()
+            boolean hasCustomQualifier = typeSafeQualifiers.stream()
+                    .anyMatch(q -> !q.name().equals(Any.class.getName()));
+            return !hasCustomQualifier || typeSafeQualifiers.stream()
                     .anyMatch(q -> q.name().equals(Default.class.getName()));
         }
 
@@ -281,7 +296,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
             if (required.equals(Any.class)) {
                 continue;
             }
-            boolean matched = explicitQualifiers.stream()
+            boolean matched = typeSafeQualifiers.stream()
                     .anyMatch(present -> present.name().equals(required.getName()));
             if (!matched) {
                 return false;
@@ -290,26 +305,4 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         return true;
     }
 
-    private boolean qualifierMatches(AnnotationInfo present, Annotation required) {
-        Class<? extends Annotation> requiredType = required.annotationType();
-        if (!present.declaration().name().equals(requiredType.getName())) {
-            return false;
-        }
-        Annotation presentProxy = AnnotationProxyFactory.create(present);
-        for (Method method : requiredType.getDeclaredMethods()) {
-            if (method.isAnnotationPresent(Nonbinding.class)) {
-                continue;
-            }
-            try {
-                Object expectedVal = method.invoke(required);
-                Object actualVal = method.invoke(presentProxy);
-                if (!Objects.deepEquals(expectedVal, actualVal)) {
-                    return false;
-                }
-            } catch (Exception e) {
-                throw new RuntimeException("Failed comparing qualifier member " + method.getName(), e);
-            }
-        }
-        return true;
-    }
 }

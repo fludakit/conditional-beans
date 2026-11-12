@@ -1,36 +1,90 @@
 package io.github.fludakit.conditional.full;
 
-import jakarta.enterprise.event.Observes;
-import jakarta.enterprise.inject.spi.BeanManager;
-import jakarta.enterprise.inject.spi.Extension;
-import jakarta.enterprise.inject.spi.ProcessBeanAttributes;
 import io.github.fludakit.conditional.Condition;
 import io.github.fludakit.conditional.ConditionContext;
 import io.github.fludakit.conditional.Conditional;
 import io.github.fludakit.conditional.Conditionals;
 
+import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.inject.Any;
+import jakarta.enterprise.inject.Default;
+import jakarta.enterprise.inject.Produces;
+import jakarta.enterprise.inject.Vetoed;
+import jakarta.enterprise.inject.spi.Annotated;
+import jakarta.enterprise.inject.spi.AnnotatedMethod;
+import jakarta.enterprise.inject.spi.AnnotatedType;
+import jakarta.enterprise.inject.spi.Extension;
+import jakarta.enterprise.inject.spi.ProcessAnnotatedType;
+import jakarta.enterprise.inject.spi.ProcessBeanAttributes;
+import jakarta.inject.Qualifier;
+
+
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class FullConditionalExtension implements Extension {
 
-    /**
-     * Handles managed beans, @Produces methods, and @Produces fields uniformly.
-     */
-    public <T> void evaluateRuntimeConditions(@Observes ProcessBeanAttributes<T> pba, BeanManager bm) {
-        ConditionContext runtimeContext = createRuntimeContext(bm);
+    private record BeanCandidate(
+            Annotated source,
+            Set<Type> types,
+            Set<Class<? extends Annotation>> qualifiers
+    ) {}
 
-        for (Annotation customAnn : unwrapConditionalAnnotations(pba.getAnnotated().getAnnotations())) {
+    private final Set<BeanCandidate> discoveredCandidates = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Step 1: Record all non-vetoed bean classes and @Produces methods during ProcessAnnotatedType,
+     * which completes completely BEFORE ProcessBeanAttributes begins.
+     */
+    public <T> void collectCandidates(@Observes ProcessAnnotatedType<T> pat) {
+        AnnotatedType<T> annotatedType = pat.getAnnotatedType();
+        if (annotatedType.isAnnotationPresent(Vetoed.class)) {
+            return;
+        }
+
+        // Record the bean class itself
+        discoveredCandidates.add(new BeanCandidate(
+                annotatedType,
+                annotatedType.getTypeClosure(),
+                extractQualifiers(annotatedType.getAnnotations())
+        ));
+
+        // Record any @Produces methods declared on this class
+        for (AnnotatedMethod<? super T> method : annotatedType.getMethods()) {
+            if (method.isAnnotationPresent(Produces.class)) {
+                discoveredCandidates.add(new BeanCandidate(
+                        method,
+                        method.getTypeClosure(),
+                        extractQualifiers(method.getAnnotations())
+                ));
+            }
+        }
+    }
+
+    /**
+     * Step 2: Evaluate conditions in ProcessBeanAttributes against the pre-collected candidates.
+     * Avoids calling BeanManager.getBeans(), which is illegal during bootstrap.
+     */
+    public <T> void evaluateRuntimeConditions(@Observes ProcessBeanAttributes<T> pba) {
+        Annotated annotated = pba.getAnnotated();
+        ConditionContext runtimeContext = createRuntimeContext(annotated);
+
+        for (Annotation customAnn : unwrapConditionalAnnotations(annotated.getAnnotations())) {
             Class<? extends Annotation> customType = customAnn.annotationType();
 
             if (customType.isAnnotationPresent(Conditional.class)) {
                 if (!evaluateConditional(customType.getAnnotation(Conditional.class), customAnn, runtimeContext)) {
+                    removeCandidate(annotated);
                     pba.veto();
                     return;
                 }
@@ -39,12 +93,34 @@ public class FullConditionalExtension implements Extension {
             if (customType.isAnnotationPresent(Conditionals.class)) {
                 for (Conditional conditional : customType.getAnnotation(Conditionals.class).value()) {
                     if (!evaluateConditional(conditional, customAnn, runtimeContext)) {
+                        removeCandidate(annotated);
                         pba.veto();
                         return;
                     }
                 }
             }
         }
+    }
+
+    private void removeCandidate(Annotated target) {
+        discoveredCandidates.removeIf(c -> c.source().equals(target));
+    }
+
+    private Set<Class<? extends Annotation>> extractQualifiers(Set<Annotation> annotations) {
+        Set<Class<? extends Annotation>> qualifiers = annotations.stream()
+                .map(Annotation::annotationType)
+                .filter(type -> type.isAnnotationPresent(Qualifier.class))
+                .filter(type -> !type.equals(jakarta.inject.Named.class))
+                .collect(Collectors.toSet());
+
+        boolean hasCustomQualifier = qualifiers.stream()
+                .anyMatch(q -> !q.equals(Any.class));
+
+        if (!hasCustomQualifier) {
+            qualifiers.add(Default.class);
+        }
+        qualifiers.add(Any.class);
+        return qualifiers;
     }
 
     private List<Annotation> unwrapConditionalAnnotations(Set<Annotation> annotations) {
@@ -58,7 +134,6 @@ public class FullConditionalExtension implements Extension {
                 continue;
             }
 
-            // Check for @Repeatable container annotations holding @Conditional elements
             try {
                 Method valueMethod = type.getDeclaredMethod("value");
                 Class<?> returnType = valueMethod.getReturnType();
@@ -92,7 +167,7 @@ public class FullConditionalExtension implements Extension {
         return true;
     }
 
-    private ConditionContext createRuntimeContext(BeanManager bm) {
+    private ConditionContext createRuntimeContext(Annotated currentTarget) {
         return new ConditionContext() {
             @Override
             public Optional<String> getEnvironmentValue(String key) {
@@ -119,27 +194,32 @@ public class FullConditionalExtension implements Extension {
             @Override
             @SafeVarargs
             public final boolean hasBean(Class<?> beanType, Class<? extends Annotation>... qualifiers) {
-                Set<jakarta.enterprise.inject.spi.Bean<?>> candidates = bm.getBeans(beanType, jakarta.enterprise.inject.Any.Literal.INSTANCE);
-                if (candidates.isEmpty()) {
-                    return false;
-                }
+                Set<Class<? extends Annotation>> required = qualifiers.length == 0
+                        ? Set.of(Default.class)
+                        : new HashSet<>(Arrays.asList(qualifiers));
 
-                if (qualifiers.length == 0) {
-                    return candidates.stream()
-                            .anyMatch(b -> b.getQualifiers().contains(jakarta.enterprise.inject.Default.Literal.INSTANCE));
-                }
-
-                for (jakarta.enterprise.inject.spi.Bean<?> bean : candidates) {
-                    Set<Class<? extends Annotation>> presentTypes = bean.getQualifiers().stream()
-                            .map(Annotation::annotationType)
-                            .collect(Collectors.toSet());
-                    if (presentTypes.containsAll(java.util.Arrays.asList(qualifiers))) {
-                        return true;
-                    }
-                }
-                return false;
+                return discoveredCandidates.stream()
+                        // Exclude the current bean/producer being evaluated so it doesn't match itself
+                        .filter(candidate -> !candidate.source().equals(currentTarget))
+                        .anyMatch(candidate ->
+                                matchesType(candidate.types(), beanType)
+                                        && candidate.qualifiers().containsAll(required)
+                        );
             }
-
         };
+    }
+
+    private boolean matchesType(Set<Type> candidateTypes, Class<?> targetType) {
+        for (Type type : candidateTypes) {
+            if (type instanceof Class<?> clazz && targetType.isAssignableFrom(clazz)) {
+                return true;
+            }
+            if (type instanceof java.lang.reflect.ParameterizedType pt
+                    && pt.getRawType() instanceof Class<?> rawClazz
+                    && targetType.isAssignableFrom(rawClazz)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

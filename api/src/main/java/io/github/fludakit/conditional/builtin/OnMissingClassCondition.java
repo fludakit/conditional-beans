@@ -6,7 +6,7 @@ import io.github.fludakit.conditional.ConditionContext;
 /**
  * The condition behind {@link ConditionalOnMissingClass}.
  */
-final class OnMissingClassCondition implements Condition<ConditionalOnMissingClass> {
+public final class OnMissingClassCondition implements Condition<ConditionalOnMissingClass> {
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnMissingClass annotation) {
