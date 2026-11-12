@@ -27,29 +27,34 @@ This is a working prototype for the Jakarta EE CDI issues
 
 ## Quick start
 
-Add the artifact to the deployment and declare a condition on a bean:
+Add the artifact to the deployment and declare a condition on a bean. For example, enable a bean only on supported operating systems by reading the `os.name` system property:
 
 ```java
-public class BrazilCondition implements Condition<Conditional> {
+public class SupportedOsCondition implements Condition<Conditional> {
 
     @Override
     public boolean matches(ConditionContext context, Conditional annotation) {
-        return "BR".equals(context.getProperty("app.country").orElse(null));
+        String osName = context.getProperty("os.name").orElse("").toLowerCase();
+
+        boolean isWindows = osName.contains("win");
+        boolean isMac = osName.contains("mac");
+        boolean isLinux = osName.contains("nux") || osName.contains("nix");
+
+        return isWindows || isMac || isLinux;
     }
 }
 ```
 
 ```java
 @ApplicationScoped
-@Conditional(BrazilCondition.class)
-public class BrazilTaxCalculator implements TaxCalculator {
+@Conditional(SupportedOsCondition.class)
+public class NativeService implements Service {
 }
 ```
 
-When `app.country` is not `BR`, the bean is **not part of the deployment**: it is not injectable, it does
+When the current OS does not match, the bean is **not part of the deployment**: it is not injectable, it does
 not show up in `BeanManager.getBeans(...)`, and it produces no `ProcessBean` event. An injection point that
-requires it fails the deployment with an unsatisfied-dependency error, which makes a missing bean obvious
-rather than silent.
+requires it fails the deployment with an unsatisfied-dependency error, making missing beans explicit.
 
 The extension is registered through `META-INF/services/jakarta.enterprise.inject.spi.Extension`, so it is
 active in every deployment that has the artifact on the classpath.
@@ -77,9 +82,9 @@ Applicable to a bean class, a producer method and a producer field.
 
 ```java
 @ApplicationScoped
-@Conditional(BrazilCondition.class)
+@Conditional(SupportedOsCondition.class)
 @Conditional(DatabaseAvailable.class)
-public class BrazilTaxCalculator implements TaxCalculator {
+public class NativeService implements Service {
 }
 ```
 
@@ -221,13 +226,13 @@ therefore declare an annotation of its own that carries a condition, the way Spr
 ```java
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-@Conditional(BrazilCondition.class)
-public @interface Brazilian {
+@Conditional(SupportedOsCondition.class)
+public @interface SupportedOs {
 }
 
 @ApplicationScoped
-@Brazilian
-public class BrazilTaxCalculator implements TaxCalculator {
+@SupportedOs
+public class NativeService implements Service {
 }
 ```
 
