@@ -15,6 +15,7 @@ import org.jboss.weld.junit5.WeldSetup;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -31,10 +32,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ComposedAnnotationTest {
 
     /** A condition that never matches. */
-    public static class NeverEnabled implements Condition<Conditional> {
+    public static class NeverEnabled implements Condition<Annotation> {
 
         @Override
-        public boolean matches(ConditionContext context, Conditional annotation) {
+        public boolean matches(ConditionContext context, Annotation annotation) {
             return false;
         }
     }

@@ -6,6 +6,8 @@ import io.github.fludakit.conditional.Conditional;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
+import java.lang.annotation.Annotation;
+
 /**
  * The beans and the conditions of the CDI Lite deployment.
  */
@@ -15,28 +17,28 @@ public final class LiteFixtures {
     }
 
     /** A condition that always matches. */
-    public static class AlwaysEnabled implements Condition<Conditional> {
+    public static class AlwaysEnabled implements Condition<Annotation> {
 
         @Override
-        public boolean matches(ConditionContext context, Conditional annotation) {
+        public boolean matches(ConditionContext context, Annotation annotation) {
             return true;
         }
     }
 
     /** A condition that never matches. */
-    public static class NeverEnabled implements Condition<Conditional> {
+    public static class NeverEnabled implements Condition<Annotation> {
 
         @Override
-        public boolean matches(ConditionContext context, Conditional annotation) {
+        public boolean matches(ConditionContext context, Annotation annotation) {
             return false;
         }
     }
 
     /** A condition driven by the {@code lite.enabled} configuration entry. */
-    public static class EnabledByProperty implements Condition<Conditional> {
+    public static class EnabledByProperty implements Condition<Annotation> {
 
         @Override
-        public boolean matches(ConditionContext context, Conditional annotation) {
+        public boolean matches(ConditionContext context, Annotation annotation) {
             return context.getEnvironmentValue("lite.enabled").isPresent();
         }
     }

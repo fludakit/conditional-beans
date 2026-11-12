@@ -3,6 +3,8 @@ package io.github.fludakit.conditional.full;
 import io.github.fludakit.conditional.Condition;
 import io.github.fludakit.conditional.ConditionContext;
 import io.github.fludakit.conditional.Conditional;
+
+import java.lang.annotation.Annotation;
 import io.github.fludakit.conditional.full.support.Fixtures;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.spi.Bean;
@@ -17,7 +19,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -41,19 +42,18 @@ class HasBeanAgreesWithContainerTest {
     private static final Map<String, Boolean> ANSWERS = new LinkedHashMap<>();
 
     /** A condition that records what the deployment model answers. */
-    public static class Probe implements Condition<Conditional> {
+    public static class Probe implements Condition<Annotation> {
 
         @Override
-        public boolean matches(ConditionContext context, Conditional annotation) {
-            Set<Class<?>> registered = context.getRegisteredBeanTypes().collect(Collectors.toSet());
-            ANSWERS.put("plain", registered.contains(Fixtures.Plain.class));
-            ANSWERS.put("marker", registered.contains(Fixtures.Marker.class));
-            ANSWERS.put("blueMarker", registered.contains(Fixtures.BlueMarker.class));
-            ANSWERS.put("named", registered.contains(Fixtures.NamedBean.class));
-            ANSWERS.put("produced", registered.contains(Fixtures.Message.class));
-            ANSWERS.put("restricted", registered.contains(Fixtures.Restricted.class));
-            ANSWERS.put("restrictedType", registered.contains(Fixtures.OnlyInterface.class));
-            ANSWERS.put("vetoed", registered.contains(Fixtures.Disabled.class));
+        public boolean matches(ConditionContext context, Annotation annotation) {
+            ANSWERS.put("plain", context.hasBean(Fixtures.Plain.class));
+            ANSWERS.put("marker", context.hasBean(Fixtures.Marker.class));
+            ANSWERS.put("blueMarker", context.hasBean(Fixtures.BlueMarker.class, Fixtures.Blue.class));
+            ANSWERS.put("named", context.hasBean(Fixtures.NamedBean.class));
+            ANSWERS.put("produced", context.hasBean(Fixtures.Message.class));
+            ANSWERS.put("restricted", context.hasBean(Fixtures.Restricted.class));
+            ANSWERS.put("restrictedType", context.hasBean(Fixtures.OnlyInterface.class));
+            ANSWERS.put("vetoed", context.hasBean(Fixtures.Disabled.class));
             return true;
         }
     }
