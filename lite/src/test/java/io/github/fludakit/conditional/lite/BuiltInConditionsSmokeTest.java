@@ -42,7 +42,7 @@ class BuiltInConditionsSmokeTest {
     }
 
     @ApplicationScoped
-    @ConditionalOnMissingClass("com.example.definitely.missing.LiteSmokeMissingClass")
+    @ConditionalOnMissingClass(name = "com.example.definitely.missing.LiteSmokeMissingClass")
     public static class MissingClassBean {
     }
 

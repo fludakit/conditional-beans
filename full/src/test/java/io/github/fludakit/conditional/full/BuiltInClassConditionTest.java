@@ -34,13 +34,13 @@ class BuiltInClassConditionTest {
 
     /** Enabled, the class is not on the classpath. */
     @ApplicationScoped
-    @ConditionalOnMissingClass(value = "com.github.fludakit.NotOnTheClasspath")
+    @ConditionalOnMissingClass(name = "com.github.fludakit.NotOnTheClasspath")
     public static class MissingClassAllowedBean {
     }
 
     /** Disabled, the class is on the classpath. */
     @ApplicationScoped
-    @ConditionalOnMissingClass(value = "java.lang.String")
+    @ConditionalOnMissingClass(name = "java.lang.String")
     public static class PresentClassRejectedBean {
     }
 

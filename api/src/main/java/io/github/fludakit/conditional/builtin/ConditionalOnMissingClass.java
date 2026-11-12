@@ -31,9 +31,9 @@ import java.lang.annotation.Target;
 public @interface ConditionalOnMissingClass {
 
     /**
-     * The names of the classes that have to be absent.
+     * The names of the classes that must be absent.
      *
-     * @return the class names
+     * @return fully qualified class names
      */
-    String[] value();
+    String[] name();
 }

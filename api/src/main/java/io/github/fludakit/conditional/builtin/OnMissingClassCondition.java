@@ -10,7 +10,7 @@ public final class OnMissingClassCondition implements Condition<ConditionalOnMis
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnMissingClass annotation) {
-        for (String name : annotation.value()) {
+        for (String name : annotation.name()) {
             if (context.hasClass(name)) {
                 return false;
             }
