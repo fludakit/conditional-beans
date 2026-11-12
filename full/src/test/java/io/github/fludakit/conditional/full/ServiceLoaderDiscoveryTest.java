@@ -1,5 +1,4 @@
 package io.github.fludakit.conditional.full;
-import io.github.fludakit.conditional.Conditional;
 
 import io.github.fludakit.conditional.full.FullConditionalExtension;
 import jakarta.enterprise.inject.spi.Extension;

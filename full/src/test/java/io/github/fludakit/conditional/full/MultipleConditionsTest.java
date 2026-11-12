@@ -1,6 +1,5 @@
 package io.github.fludakit.conditional.full;
 import io.github.fludakit.conditional.Conditional;
-import io.github.fludakit.conditional.Condition;
 
 import io.github.fludakit.conditional.full.FullConditionalExtension;
 import io.github.fludakit.conditional.full.support.Conditions;

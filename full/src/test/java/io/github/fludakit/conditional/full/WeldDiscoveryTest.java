@@ -1,5 +1,4 @@
 package io.github.fludakit.conditional.full;
-import io.github.fludakit.conditional.Conditional;
 
 import io.github.fludakit.conditional.full.serviceloader.ServiceLoaderDisabledBean;
 import io.github.fludakit.conditional.full.serviceloader.ServiceLoaderEnabledBean;
@@ -18,19 +17,13 @@ class WeldDiscoveryTest {
 
     @Test
     void defaultDiscoveryActivatesTheExtension() {
-        WeldContainer container = null;
-        try {
-            container = new Weld()
-                    .addPackages(ServiceLoaderEnabledBean.class, ServiceLoaderDisabledBean.class)
-                    .initialize();
+        try (WeldContainer container = new Weld()
+                .addPackages(ServiceLoaderEnabledBean.class, ServiceLoaderDisabledBean.class)
+                .initialize()) {
 
             BeanManager beanManager = container.getBeanManager();
             assertThat(beanManager.getBeans(ServiceLoaderEnabledBean.class)).hasSize(1);
             assertThat(beanManager.getBeans(ServiceLoaderDisabledBean.class)).isEmpty();
-        } finally {
-            if (container != null) {
-                container.shutdown();
-            }
         }
     }
 }

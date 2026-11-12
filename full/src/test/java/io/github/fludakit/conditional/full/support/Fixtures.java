@@ -1,6 +1,4 @@
 package io.github.fludakit.conditional.full.support;
-import io.github.fludakit.conditional.Conditional;
-import io.github.fludakit.conditional.Condition;
 
 import io.github.fludakit.conditional.Conditional;
 import jakarta.enterprise.context.ApplicationScoped;
