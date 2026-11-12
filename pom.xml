@@ -11,8 +11,8 @@
         <relativePath/>
     </parent>
 
-    <artifactId>fluda-conditional-beans</artifactId>
-    <packaging>jar</packaging>
+    <artifactId>fluda-conditional-beans-parent</artifactId>
+    <packaging>pom</packaging>
 
     <name>FluDa :: Conditional Beans</name>
     <description>Portable CDI Extension providing declarative conditional bean activation for CDI 4.1.</description>
@@ -34,39 +34,41 @@
 
     <scm>
         <connection>scm:git:git://github.com/fludakit/conditional-beans.git</connection>
-        <developerConnection>scm:git:ssh://github.com/fludakit/conditional-beans.git</developerConnection>
+        <developerConnection>scm:git:ssh://github.com:fludakit/conditional-beans.git</developerConnection>
         <url>https://github.com/fludakit/conditional-beans</url>
         <tag>HEAD</tag>
     </scm>
 
-    <dependencies>
-        <dependency>
-            <groupId>jakarta.enterprise</groupId>
-            <artifactId>jakarta.enterprise.cdi-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.inject</groupId>
-            <artifactId>jakarta.inject-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
+    <properties>
+        <!-- The Quarkus version the CDI Lite path is verified against. -->
+        <quarkus.version>3.39.1</quarkus.version>
+    </properties>
 
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.weld</groupId>
-            <artifactId>weld-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    <modules>
+        <module>api</module>
+        <module>full</module>
+        <module>lite</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.github.fludakit</groupId>
+                <artifactId>fluda-conditional-beans-api</artifactId>
+                <version>1.0.0-SNAPSHOT</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.fludakit</groupId>
+                <artifactId>fluda-conditional-beans-full</artifactId>
+                <version>1.0.0-SNAPSHOT</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.fludakit</groupId>
+                <artifactId>fluda-conditional-beans-lite</artifactId>
+                <version>1.0.0-SNAPSHOT</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
         <plugins>
