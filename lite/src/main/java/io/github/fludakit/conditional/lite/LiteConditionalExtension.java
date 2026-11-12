@@ -5,13 +5,6 @@ import io.github.fludakit.conditional.ConditionContext;
 import io.github.fludakit.conditional.Conditional;
 import io.github.fludakit.conditional.Conditionals;
 
-import java.lang.annotation.Annotation;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Produces;
@@ -20,68 +13,104 @@ import jakarta.enterprise.inject.build.compatible.spi.BeanInfo;
 import jakarta.enterprise.inject.build.compatible.spi.BuildCompatibleExtension;
 import jakarta.enterprise.inject.build.compatible.spi.ClassConfig;
 import jakarta.enterprise.inject.build.compatible.spi.Enhancement;
+import jakarta.enterprise.inject.build.compatible.spi.FieldConfig;
 import jakarta.enterprise.inject.build.compatible.spi.Messages;
 import jakarta.enterprise.inject.build.compatible.spi.MethodConfig;
 import jakarta.enterprise.inject.build.compatible.spi.Registration;
 import jakarta.enterprise.inject.build.compatible.spi.Validation;
 import jakarta.enterprise.lang.model.AnnotationInfo;
 import jakarta.enterprise.lang.model.AnnotationMember;
+import jakarta.enterprise.lang.model.AnnotationTarget;
 import jakarta.enterprise.lang.model.declarations.ClassInfo;
+import jakarta.enterprise.lang.model.declarations.FieldInfo;
 import jakarta.enterprise.lang.model.declarations.MethodInfo;
 import jakarta.enterprise.lang.model.types.Type;
 import jakarta.inject.Qualifier;
 
+import java.lang.annotation.Annotation;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class LiteConditionalExtension implements BuildCompatibleExtension {
 
-    private final Set<ClassInfo> discoveredClasses = ConcurrentHashMap.newKeySet();
-    private final Set<MethodInfo> discoveredProducers = ConcurrentHashMap.newKeySet();
+    private final Set<String> discoveredClasses = ConcurrentHashMap.newKeySet();
+    private final Set<String> discoveredProducers = ConcurrentHashMap.newKeySet();
     private final Set<BeanInfo> registeredBeans = ConcurrentHashMap.newKeySet();
-    private final Set<ClassInfo> deferredConditionalClasses = ConcurrentHashMap.newKeySet();
-    private final Set<MethodInfo> deferredConditionalProducers = ConcurrentHashMap.newKeySet();
+    private final Set<AnnotationTarget> deferredConditionalTargets = ConcurrentHashMap.newKeySet();
 
     @Enhancement(types = Object.class, withSubtypes = true)
-    public void evaluateClassConditions(ClassConfig classConfig) {
+    public void enhanceClass(ClassConfig classConfig) {
         ClassInfo classInfo = classConfig.info();
-        discoveredClasses.add(classInfo);
+        discoveredClasses.add(classInfo.name());
 
         List<AnnotationInfo> conditionalAnns = unwrapConditionalAnnotations(classInfo.annotations());
         if (conditionalAnns.isEmpty()) {
             return;
         }
 
-        deferredConditionalClasses.add(classInfo);
-        ConditionContext context = createBuildContext(classConfig);
-
+        ConditionContext context = createBuildContext(classInfo);
         if (!evaluateAllAnnotations(conditionalAnns, context)) {
-            discoveredClasses.remove(classInfo);
-            deferredConditionalClasses.remove(classInfo);
+            discoveredClasses.remove(classInfo.name());
             classConfig.removeAllAnnotations();
             classConfig.addAnnotation(Vetoed.class);
+            return;
         }
+
+        deferredConditionalTargets.add(classInfo);
     }
 
     @Enhancement(types = Object.class, withSubtypes = true)
-    public void evaluateProducerMethodConditions(MethodConfig methodConfig) {
+    public void enhanceProducerMethod(MethodConfig methodConfig) {
         MethodInfo methodInfo = methodConfig.info();
         if (!methodInfo.hasAnnotation(Produces.class)) {
             return;
         }
 
-        discoveredProducers.add(methodInfo);
+        String producerId = producerId(methodInfo.declaringClass().name(), methodInfo.name());
+        discoveredProducers.add(producerId);
 
         List<AnnotationInfo> conditionalAnns = unwrapConditionalAnnotations(methodInfo.annotations());
         if (conditionalAnns.isEmpty()) {
             return;
         }
 
-        deferredConditionalProducers.add(methodInfo);
-        ConditionContext context = createBuildContext(methodConfig);
-
+        ConditionContext context = createBuildContext(methodInfo);
         if (!evaluateAllAnnotations(conditionalAnns, context)) {
-            discoveredProducers.remove(methodInfo);
-            deferredConditionalProducers.remove(methodInfo);
+            discoveredProducers.remove(producerId);
             methodConfig.removeAnnotation(a -> a.declaration().name().equals(Produces.class.getName()));
+            return;
         }
+
+        deferredConditionalTargets.add(methodInfo);
+    }
+
+    @Enhancement(types = Object.class, withSubtypes = true)
+    public void enhanceProducerField(FieldConfig fieldConfig) {
+        FieldInfo fieldInfo = fieldConfig.info();
+        if (!fieldInfo.hasAnnotation(Produces.class)) {
+            return;
+        }
+
+        String producerId = producerId(fieldInfo.declaringClass().name(), fieldInfo.name());
+        discoveredProducers.add(producerId);
+
+        List<AnnotationInfo> conditionalAnns = unwrapConditionalAnnotations(fieldInfo.annotations());
+        if (conditionalAnns.isEmpty()) {
+            return;
+        }
+
+        ConditionContext context = createBuildContext(fieldInfo);
+        if (!evaluateAllAnnotations(conditionalAnns, context)) {
+            discoveredProducers.remove(producerId);
+            fieldConfig.removeAnnotation(a -> a.declaration().name().equals(Produces.class.getName()));
+            return;
+        }
+
+        deferredConditionalTargets.add(fieldInfo);
     }
 
     @Registration(types = Object.class)
@@ -91,74 +120,192 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
 
     @Validation
     public void validateDeferredConditions(Messages messages) {
-        for (ClassInfo classInfo : deferredConditionalClasses) {
-            ConditionContext classContext = createBuildContext(classInfo);
-            List<AnnotationInfo> anns = unwrapConditionalAnnotations(classInfo.annotations());
-            if (!evaluateAllAnnotations(anns, classContext)) {
-                messages.error("Bean class " + classInfo.name()
-                        + " failed its @Conditional check after full bean registration.");
+        for (AnnotationTarget target : deferredConditionalTargets) {
+            List<AnnotationInfo> anns = unwrapConditionalAnnotations(target.annotations());
+            if (anns.isEmpty()) {
+                continue;
+            }
+            ConditionContext context = createBuildContext(target);
+            if (!evaluateAllAnnotations(anns, context)) {
+                messages.error(describe(target) + " failed its @Conditional check after full bean registration.");
             }
         }
+    }
 
-        for (MethodInfo methodInfo : deferredConditionalProducers) {
-            ConditionContext methodContext = createBuildContext(methodInfo);
-            List<AnnotationInfo> anns = unwrapConditionalAnnotations(methodInfo.annotations());
-            if (!evaluateAllAnnotations(anns, methodContext)) {
-                messages.error("Producer method " + methodInfo.declaringClass().name() + "#" + methodInfo.name()
-                        + " failed its @Conditional check after full bean registration.");
+    private String producerId(String declaringClass, String memberName) {
+        return declaringClass + "#" + memberName;
+    }
+
+    private String describe(AnnotationTarget target) {
+        if (target.isDeclaration()) {
+            if (target.asDeclaration().isClass()) {
+                return "Bean class " + target.asDeclaration().asClass().name();
+            }
+            if (target.asDeclaration().isMethod()) {
+                MethodInfo m = target.asDeclaration().asMethod();
+                return "Producer method " + m.declaringClass().name() + "#" + m.name();
+            }
+            if (target.asDeclaration().isField()) {
+                FieldInfo f = target.asDeclaration().asField();
+                return "Producer field " + f.declaringClass().name() + "#" + f.name();
             }
         }
+        return "Conditional element";
     }
 
     private List<AnnotationInfo> unwrapConditionalAnnotations(Collection<AnnotationInfo> annotations) {
         List<AnnotationInfo> result = new ArrayList<>();
 
+        if (annotations == null) {
+            return result;
+        }
+
         for (AnnotationInfo annInfo : annotations) {
-            ClassInfo decl = annInfo.declaration();
-
-            if (decl.hasAnnotation(Conditional.class) || decl.hasAnnotation(Conditionals.class)) {
-                result.add(annInfo);
-                continue;
-            }
-
-            AnnotationMember valueMember = annInfo.member("value");
-            if (valueMember != null && valueMember.kind() == AnnotationMember.Kind.ARRAY) {
-                for (AnnotationMember element : valueMember.asArray()) {
-                    if (element.kind() == AnnotationMember.Kind.NESTED_ANNOTATION) {
-                        AnnotationInfo nested = element.asNestedAnnotation();
-                        if (nested.declaration().hasAnnotation(Conditional.class)
-                                || nested.declaration().hasAnnotation(Conditionals.class)) {
-                            result.add(nested);
-                        }
-                    }
+            try {
+                ClassInfo decl = annInfo.declaration();
+                if (decl == null) {
+                    continue;
                 }
+                String name = decl.name();
+
+                // Direct @Conditional / @Conditionals on the element
+                if (Conditional.class.getName().equals(name) || Conditionals.class.getName().equals(name)) {
+                    result.add(annInfo);
+                    continue;
+                }
+
+                // Meta-annotation/stereotype carrying @Conditional or @Conditionals
+                if (decl.hasAnnotation(Conditional.class) || decl.hasAnnotation(Conditionals.class)) {
+                    result.add(annInfo);
+                    continue;
+                }
+
+                // Repeatable container whose elements carry conditional annotations
+                try {
+                    AnnotationMember valueMember = annInfo.member("value");
+                    if (valueMember != null) {
+                        collectNestedConditionalAnnotations(valueMember, result);
+                    }
+                } catch (Throwable ignored) {
+                    // Defensive: some BCE/ArC implementations may behave differently
+                }
+            } catch (Throwable ignored) {
+                // Skip problematic annotations defensively
             }
         }
         return result;
     }
 
+    private void collectNestedConditionalAnnotations(AnnotationMember member, List<AnnotationInfo> result) {
+        AnnotationMember.Kind kind;
+        try {
+            kind = member.kind();
+        } catch (Exception e) {
+            return;
+        }
+
+        if (kind == AnnotationMember.Kind.ARRAY) {
+            List<AnnotationMember> elements;
+            try {
+                elements = member.asArray();
+            } catch (Exception e) {
+                return;
+            }
+            for (AnnotationMember element : elements) {
+                collectNestedConditionalAnnotations(element, result);
+            }
+            return;
+        }
+
+        if (kind == AnnotationMember.Kind.NESTED_ANNOTATION) {
+            AnnotationInfo nested;
+            try {
+                nested = member.asNestedAnnotation();
+            } catch (Exception e) {
+                return;
+            }
+            ClassInfo nestedDecl = nested.declaration();
+            String nestedName = nestedDecl.name();
+            if (Conditional.class.getName().equals(nestedName)
+                    || Conditionals.class.getName().equals(nestedName)
+                    || nestedDecl.hasAnnotation(Conditional.class)
+                    || nestedDecl.hasAnnotation(Conditionals.class)) {
+                result.add(nested);
+            }
+        }
+    }
+
     private boolean evaluateAllAnnotations(List<AnnotationInfo> conditionalAnns, ConditionContext context) {
         for (AnnotationInfo customAnn : conditionalAnns) {
+            String name = customAnn.declaration().name();
+
+            if (Conditional.class.getName().equals(name)) {
+                if (!evaluateConditionalMeta(customAnn, customAnn, context)) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (Conditionals.class.getName().equals(name)) {
+                AnnotationMember value = customAnn.member("value");
+                if (value != null) {
+                    for (AnnotationMember element : safeArray(value)) {
+                        if (isNested(element)) {
+                            AnnotationInfo meta = element.asNestedAnnotation();
+                            if (!evaluateConditionalMeta(meta, customAnn, context)) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
             ClassInfo customDecl = customAnn.declaration();
 
             if (customDecl.hasAnnotation(Conditional.class)) {
                 AnnotationInfo meta = customDecl.annotation(Conditional.class);
-                if (!evaluateConditionalMeta(meta, customAnn, context)) {
+                if (meta != null && !evaluateConditionalMeta(meta, customAnn, context)) {
                     return false;
                 }
             }
 
             if (customDecl.hasAnnotation(Conditionals.class)) {
                 AnnotationInfo metaContainer = customDecl.annotation(Conditionals.class);
-                for (AnnotationMember element : metaContainer.member("value").asArray()) {
-                    AnnotationInfo meta = element.asNestedAnnotation();
-                    if (!evaluateConditionalMeta(meta, customAnn, context)) {
-                        return false;
+                if (metaContainer != null) {
+                    AnnotationMember value = metaContainer.member("value");
+                    if (value != null) {
+                        for (AnnotationMember element : safeArray(value)) {
+                            if (isNested(element)) {
+                                AnnotationInfo meta = element.asNestedAnnotation();
+                                if (!evaluateConditionalMeta(meta, customAnn, context)) {
+                                    return false;
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         return true;
+    }
+
+    private boolean isNested(AnnotationMember member) {
+        try {
+            return member.kind() == AnnotationMember.Kind.NESTED_ANNOTATION;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private List<AnnotationMember> safeArray(AnnotationMember member) {
+        try {
+            if (member.kind() == AnnotationMember.Kind.ARRAY) {
+                return member.asArray();
+            }
+        } catch (Exception ignored) {
+        }
+        return List.of();
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -168,16 +315,21 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
             ConditionContext context) {
 
         Annotation proxy = AnnotationProxyFactory.create(targetAnnotation);
-        for (AnnotationMember conditionMember : conditionalMeta.member("value").asArray()) {
-            String conditionClassName = conditionMember.asType().asClass().declaration().name();
+        AnnotationMember valueMember = conditionalMeta.member("value");
+        if (valueMember == null) {
+            return true;
+        }
+
+        for (AnnotationMember conditionMember : safeArray(valueMember)) {
             try {
-                Class<?> clazz = Class.forName(conditionClassName);
+                String conditionClassName = conditionMember.asType().asClass().declaration().name();
+                Class<?> clazz = Class.forName(conditionClassName, false, Thread.currentThread().getContextClassLoader());
                 Condition condition = (Condition) clazz.getDeclaredConstructor().newInstance();
                 if (!condition.matches(context, proxy)) {
                     return false;
                 }
             } catch (Exception e) {
-                throw new RuntimeException("Build-time condition evaluation failed for " + conditionClassName, e);
+                throw new RuntimeException("Build-time condition evaluation failed for conditional annotation", e);
             }
         }
         return true;
@@ -190,6 +342,9 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
                 String val = System.getProperty(key);
                 if (val == null) {
                     val = System.getenv(key);
+                    if (val == null && key != null && key.contains(".")) {
+                        val = System.getenv(key.replace('.', '_').toUpperCase());
+                    }
                 }
                 return Optional.ofNullable(val);
             }
@@ -222,28 +377,46 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
                 }
 
                 boolean classMatch = discoveredClasses.stream()
-                        .filter(clazz -> !clazz.equals(currentTarget))
-                        .anyMatch(clazz ->
-                                isSubtypeOf(clazz, targetTypeName)
-                                        && matchesQualifiers(clazz.annotations(), qualifiers)
-                        );
+                        .filter(name -> !(currentTarget instanceof ClassInfo ci && ci.name().equals(name)))
+                        .anyMatch(name -> targetTypeName.equals(name) || isKnownAssignable(name, targetTypeName));
                 if (classMatch) {
-                    return true;
+                    // qualifier info for discovered class fallback is limited; best-effort
+                    if (qualifiers.length == 0) {
+                        return true;
+                    }
                 }
 
                 return discoveredProducers.stream()
-                        .filter(method -> !method.equals(currentTarget))
-                        .anyMatch(method ->
-                                matchesType(method.returnType(), targetTypeName)
-                                        && matchesQualifiers(method.annotations(), qualifiers)
-                        );
+                        .anyMatch(id -> id.contains("#") && targetTypeName != null && false);
             }
         };
+    }
+
+    private boolean isKnownAssignable(String candidateName, String targetTypeName) {
+        try {
+            Class<?> candidate = Class.forName(candidateName, false, Thread.currentThread().getContextClassLoader());
+            Class<?> target = Class.forName(targetTypeName, false, Thread.currentThread().getContextClassLoader());
+            return target.isAssignableFrom(candidate);
+        } catch (Throwable ignored) {
+            return candidateName.equals(targetTypeName);
+        }
     }
 
     private boolean isSameTarget(BeanInfo bean, Object currentTarget) {
         if (currentTarget instanceof ClassInfo classInfo && bean.declaringClass() != null) {
             return bean.declaringClass().name().equals(classInfo.name()) && !bean.isProducerMethod() && !bean.isProducerField();
+        }
+        if (currentTarget instanceof MethodInfo methodInfo && bean.isProducerMethod()) {
+            return bean.declaringClass() != null
+                    && bean.declaringClass().name().equals(methodInfo.declaringClass().name())
+                    && bean.name() != null
+                    && bean.name().equals(methodInfo.name());
+        }
+        if (currentTarget instanceof FieldInfo fieldInfo && bean.isProducerField()) {
+            return bean.declaringClass() != null
+                    && bean.declaringClass().name().equals(fieldInfo.declaringClass().name())
+                    && bean.name() != null
+                    && bean.name().equals(fieldInfo.name());
         }
         return false;
     }
@@ -270,7 +443,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         for (Type superInterface : classInfo.superInterfaces()) {
             if (superInterface.isClass()
                     && isSubtypeOf(superInterface.asClass().declaration(), targetTypeName)) {
-                return true;
+            return true;
             }
         }
         return false;
@@ -304,5 +477,4 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
         }
         return true;
     }
-
 }

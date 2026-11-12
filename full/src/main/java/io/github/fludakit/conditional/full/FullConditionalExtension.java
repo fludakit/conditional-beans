@@ -9,15 +9,16 @@ import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Produces;
+import jakarta.enterprise.inject.Typed;
 import jakarta.enterprise.inject.Vetoed;
 import jakarta.enterprise.inject.spi.Annotated;
+import jakarta.enterprise.inject.spi.AnnotatedField;
 import jakarta.enterprise.inject.spi.AnnotatedMethod;
 import jakarta.enterprise.inject.spi.AnnotatedType;
 import jakarta.enterprise.inject.spi.Extension;
 import jakarta.enterprise.inject.spi.ProcessAnnotatedType;
 import jakarta.enterprise.inject.spi.ProcessBeanAttributes;
 import jakarta.inject.Qualifier;
-
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
@@ -38,12 +39,13 @@ public class FullConditionalExtension implements Extension {
             Annotated source,
             Set<Type> types,
             Set<Class<? extends Annotation>> qualifiers
-    ) {}
+    ) {
+    }
 
     private final Set<BeanCandidate> discoveredCandidates = ConcurrentHashMap.newKeySet();
 
     /**
-     * Step 1: Record all non-vetoed bean classes and @Produces methods during ProcessAnnotatedType,
+     * Step 1: Record all non-vetoed bean classes and @Produces methods/fields during ProcessAnnotatedType,
      * which completes completely BEFORE ProcessBeanAttributes begins.
      */
     public <T> void collectCandidates(@Observes ProcessAnnotatedType<T> pat) {
@@ -55,7 +57,7 @@ public class FullConditionalExtension implements Extension {
         // Record the bean class itself
         discoveredCandidates.add(new BeanCandidate(
                 annotatedType,
-                annotatedType.getTypeClosure(),
+                beanTypes(annotatedType),
                 extractQualifiers(annotatedType.getAnnotations())
         ));
 
@@ -64,8 +66,19 @@ public class FullConditionalExtension implements Extension {
             if (method.isAnnotationPresent(Produces.class)) {
                 discoveredCandidates.add(new BeanCandidate(
                         method,
-                        method.getTypeClosure(),
+                        beanTypes(method),
                         extractQualifiers(method.getAnnotations())
+                ));
+            }
+        }
+
+        // Record any @Produces fields declared on this class
+        for (AnnotatedField<? super T> field : annotatedType.getFields()) {
+            if (field.isAnnotationPresent(Produces.class)) {
+                discoveredCandidates.add(new BeanCandidate(
+                        field,
+                        beanTypes(field),
+                        extractQualifiers(field.getAnnotations())
                 ));
             }
         }
@@ -79,31 +92,100 @@ public class FullConditionalExtension implements Extension {
         Annotated annotated = pba.getAnnotated();
         ConditionContext runtimeContext = createRuntimeContext(annotated);
 
-        for (Annotation customAnn : unwrapConditionalAnnotations(annotated.getAnnotations())) {
-            Class<? extends Annotation> customType = customAnn.annotationType();
-
-            if (customType.isAnnotationPresent(Conditional.class)) {
-                if (!evaluateConditional(customType.getAnnotation(Conditional.class), customAnn, runtimeContext)) {
-                    removeCandidate(annotated);
-                    pba.veto();
-                    return;
-                }
-            }
-
-            if (customType.isAnnotationPresent(Conditionals.class)) {
-                for (Conditional conditional : customType.getAnnotation(Conditionals.class).value()) {
-                    if (!evaluateConditional(conditional, customAnn, runtimeContext)) {
-                        removeCandidate(annotated);
-                        pba.veto();
-                        return;
-                    }
-                }
+        for (ConditionalEntry entry : collectConditionalEntries(annotated.getAnnotations())) {
+            if (!evaluateConditional(entry.conditional(), entry.targetAnnotation(), runtimeContext)) {
+                pba.veto();
+                return;
             }
         }
     }
 
-    private void removeCandidate(Annotated target) {
-        discoveredCandidates.removeIf(c -> c.source().equals(target));
+    private record ConditionalEntry(Conditional conditional, Annotation targetAnnotation) {
+    }
+
+    private List<ConditionalEntry> collectConditionalEntries(Set<Annotation> annotations) {
+        List<ConditionalEntry> result = new ArrayList<>();
+
+        for (Annotation ann : annotations) {
+            Class<? extends Annotation> type = ann.annotationType();
+
+            // Direct @Conditional usage
+            if (type.equals(Conditional.class)) {
+                Conditional conditional = (Conditional) ann;
+                result.add(new ConditionalEntry(conditional, ann));
+                continue;
+            }
+
+            // Direct @Conditionals container usage
+            if (type.equals(Conditionals.class)) {
+                Conditionals conditionals = (Conditionals) ann;
+                for (Conditional conditional : conditionals.value()) {
+                    result.add(new ConditionalEntry(conditional, ann));
+                }
+                continue;
+            }
+
+            // Meta-annotation / stereotype carrying @Conditional
+            if (type.isAnnotationPresent(Conditional.class)) {
+                result.add(new ConditionalEntry(type.getAnnotation(Conditional.class), ann));
+                continue;
+            }
+
+            // Meta-annotation / stereotype carrying @Conditionals
+            if (type.isAnnotationPresent(Conditionals.class)) {
+                for (Conditional conditional : type.getAnnotation(Conditionals.class).value()) {
+                    result.add(new ConditionalEntry(conditional, ann));
+                }
+                continue;
+            }
+
+            // Repeatable container annotations (e.g. some custom repeatables) whose elements hold @Conditional
+            try {
+                Method valueMethod = type.getDeclaredMethod("value");
+                valueMethod.setAccessible(true);
+                Class<?> returnType = valueMethod.getReturnType();
+                if (returnType.isArray() && Annotation.class.isAssignableFrom(returnType.getComponentType())) {
+                    Class<?> component = returnType.getComponentType();
+                    if (component.equals(Conditional.class)) {
+                        Conditional[] values = (Conditional[]) valueMethod.invoke(ann);
+                        for (Conditional conditional : values) {
+                            result.add(new ConditionalEntry(conditional, ann));
+                        }
+                        continue;
+                    }
+                    if (component.equals(Conditionals.class)) {
+                        Conditionals[] values = (Conditionals[]) valueMethod.invoke(ann);
+                        for (Conditionals container : values) {
+                            for (Conditional conditional : container.value()) {
+                                result.add(new ConditionalEntry(conditional, ann));
+                            }
+                        }
+                        continue;
+                    }
+                    if (component.isAnnotationPresent(Conditional.class)) {
+                        Annotation[] values = (Annotation[]) valueMethod.invoke(ann);
+                        for (Annotation nested : values) {
+                            result.add(new ConditionalEntry(nested.annotationType().getAnnotation(Conditional.class), nested));
+                        }
+                        continue;
+                    }
+                    if (component.isAnnotationPresent(Conditionals.class)) {
+                        Annotation[] values = (Annotation[]) valueMethod.invoke(ann);
+                        for (Annotation nested : values) {
+                            for (Conditional conditional : nested.annotationType().getAnnotation(Conditionals.class).value()) {
+                                result.add(new ConditionalEntry(conditional, nested));
+                            }
+                        }
+                        continue;
+                    }
+                }
+            } catch (NoSuchMethodException ignored) {
+            } catch (Exception e) {
+                throw new RuntimeException("Failed unwrapping repeatable annotation: " + type.getName(), e);
+            }
+        }
+
+        return result;
     }
 
     private Set<Class<? extends Annotation>> extractQualifiers(Set<Annotation> annotations) {
@@ -123,36 +205,7 @@ public class FullConditionalExtension implements Extension {
         return qualifiers;
     }
 
-    private List<Annotation> unwrapConditionalAnnotations(Set<Annotation> annotations) {
-        List<Annotation> result = new ArrayList<>();
-
-        for (Annotation ann : annotations) {
-            Class<? extends Annotation> type = ann.annotationType();
-
-            if (type.isAnnotationPresent(Conditional.class) || type.isAnnotationPresent(Conditionals.class)) {
-                result.add(ann);
-                continue;
-            }
-
-            try {
-                Method valueMethod = type.getDeclaredMethod("value");
-                Class<?> returnType = valueMethod.getReturnType();
-                if (returnType.isArray() && Annotation.class.isAssignableFrom(returnType.getComponentType())) {
-                    Class<?> component = returnType.getComponentType();
-                    if (component.isAnnotationPresent(Conditional.class)
-                            || component.isAnnotationPresent(Conditionals.class)) {
-                        Collections.addAll(result, (Annotation[]) valueMethod.invoke(ann));
-                    }
-                }
-            } catch (NoSuchMethodException ignored) {
-            } catch (Exception e) {
-                throw new RuntimeException("Failed unwrapping repeatable annotation: " + type.getName(), e);
-            }
-        }
-        return result;
-    }
-
-    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private boolean evaluateConditional(Conditional conditional, Annotation targetAnnotation, ConditionContext context) {
         for (Class<? extends Condition> condClass : conditional.value()) {
             try {
@@ -161,6 +214,9 @@ public class FullConditionalExtension implements Extension {
                     return false;
                 }
             } catch (Exception e) {
+                if (e instanceof RuntimeException re) {
+                    throw re;
+                }
                 throw new RuntimeException("Runtime condition evaluation failed for " + condClass.getName(), e);
             }
         }
@@ -174,6 +230,9 @@ public class FullConditionalExtension implements Extension {
                 String val = System.getProperty(key);
                 if (val == null) {
                     val = System.getenv(key);
+                    if (val == null && key != null && key.contains(".")) {
+                        val = System.getenv(key.replace('.', '_').toUpperCase());
+                    }
                 }
                 return Optional.ofNullable(val);
             }
@@ -194,19 +253,30 @@ public class FullConditionalExtension implements Extension {
             @Override
             @SafeVarargs
             public final boolean hasBean(Class<?> beanType, Class<? extends Annotation>... qualifiers) {
-                Set<Class<? extends Annotation>> required = qualifiers.length == 0
-                        ? Set.of(Default.class)
-                        : new HashSet<>(Arrays.asList(qualifiers));
-
                 return discoveredCandidates.stream()
-                        // Exclude the current bean/producer being evaluated so it doesn't match itself
                         .filter(candidate -> !candidate.source().equals(currentTarget))
-                        .anyMatch(candidate ->
-                                matchesType(candidate.types(), beanType)
-                                        && candidate.qualifiers().containsAll(required)
-                        );
+                        .anyMatch(candidate -> {
+                            if (!matchesType(candidate.types(), beanType)) {
+                                return false;
+                            }
+                            if (qualifiers.length == 0) {
+                                return true;
+                            }
+                            Set<Class<? extends Annotation>> required = new HashSet<>(Arrays.asList(qualifiers));
+                            return candidate.qualifiers().containsAll(required);
+                        });
             }
         };
+    }
+
+    private Set<Type> beanTypes(Annotated annotated) {
+        Typed typed = annotated.getAnnotation(Typed.class);
+        if (typed != null) {
+            Set<Type> types = new HashSet<>(Arrays.asList(typed.value()));
+            types.add(Object.class);
+            return types;
+        }
+        return new HashSet<>(annotated.getTypeClosure());
     }
 
     private boolean matchesType(Set<Type> candidateTypes, Class<?> targetType) {
