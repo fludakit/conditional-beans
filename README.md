@@ -19,14 +19,9 @@ This is a working prototype for the Jakarta EE CDI issues
 
 | Artifact | Package | What it is |
 |---|---|---|
-| `fluda-conditional-beans-api` | `io.github.fludakit.conditional` | The proposal API: `@Conditional`, `@Conditionals`, `Condition`, `ConditionContext`. Nothing else. |
-| `fluda-conditional-beans-full` | `io.github.fludakit.conditional.full` | The CDI Full implementation: a portable extension, the built-in conditions and the deployment model. |
-| `fluda-conditional-beans-lite` | `io.github.fludakit.conditional.lite` | The CDI Lite implementation: a build compatible extension that evaluates the conditions while the application is built. |
-
-The API module holds nothing but the four top-level types of the proposal, so that the specification can
-be discussed without an implementation in the way. The `full` module depends on the API and provides the
-built-in conditions; the `lite` module depends on the API alone and lets the application write its own
-conditions.
+| `fluda-conditional-beans-api` | `io.github.fludakit.conditional` | Core API (`@Conditional`, `@Conditionals`, `Condition`, `ConditionContext`) and built-in conditional annotations/condition implementations. |
+| `fluda-conditional-beans-full` | `io.github.fludakit.conditional.full` | CDI Full runtime: portable extension that evaluates conditions at bootstrap and vetoes non-matching beans/producers. |
+| `fluda-conditional-beans-lite` | `io.github.fludakit.conditional.lite` | CDI Lite runtime: build compatible extension that evaluates conditions during build/enhancement with deferred validation. |
 
 ---
 
@@ -39,7 +34,7 @@ public class BrazilCondition implements Condition<Conditional> {
 
     @Override
     public boolean matches(ConditionContext context, Conditional annotation) {
-        return "BR".equals(context.getEnvironmentValue("app.country").orElse(null));
+        return "BR".equals(context.getProperty("app.country").orElse(null));
     }
 }
 ```
@@ -128,7 +123,7 @@ public class BrazilCondition implements Condition<ConditionalOnCountry> {
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnCountry annotation) {
-        return "BR".equals(context.getEnvironmentValue(annotation.country()).orElse(null));
+        return "BR".equals(context.getProperty(annotation.country()).orElse(null));
     }
 }
 ```
@@ -154,26 +149,22 @@ deployment.
 ```java
 public interface ConditionContext {
 
-    Optional<String> getEnvironmentValue(String key);
+    Optional<String> getProperty(String key);
 
-    boolean isClassPresent(String className);
+    boolean hasClass(String... className);
 
-    Stream<Class<?>> getRegisteredBeanTypes();
+    @SuppressWarnings("unchecked")
+    boolean hasBean(Class<?> beanClass, Class<? extends Annotation>... qualifiers);
 }
 ```
 
-Everything on the context is a **CDI concept**. There is deliberately no general-purpose environment, no
-property resolver and no resource loader:
+The context exposes only the deployment data needed at bootstrap/build time:
 
 | Method | Meaning |
 |---|---|
-| `getEnvironmentValue(String)` | A configuration entry, from system properties and then from environment variables. A dotted name also matches the relaxed environment form, so `app.country` resolves `APP_COUNTRY`. |
-| `isClassPresent(String)` | Whether the named class is available. The name form is the useful one, because it does not force the class to be loaded. |
-| `getRegisteredBeanTypes()` | The **bean types** of the beans that are part of the deployment. A bean of a subtype also contributes the types of its supertypes. |
-
-The context reports bean *types*, and nothing else. The qualifiers of a bean are not part of the question a
-condition can ask, which keeps the context small and the answer independent of the qualifier model of the
-container. A condition that needs a bean of a specific qualifier cannot ask for one in this version.
+| `getProperty(String)` | Returns a configuration property value (typically system properties, then environment variables; dotted keys may also resolve relaxed env names such as `app.country` → `APP_COUNTRY`). |
+| `hasClass(String...)` | Checks whether all named classes are available to the deployment. |
+| `hasBean(Class<?> beanClass, Class<? extends Annotation>... qualifiers)` | Checks whether a matching bean is part of the potential deployment model (independent of declaration order; a bean vetoed by a condition may still count as present for evaluation). |
 
 ---
 
@@ -218,9 +209,7 @@ has to have, compared ignoring the case. An empty `havingValue` - the default - 
 annotation asks for the presence of the entry and nothing more. The entries that are not required are covered
 by `@ConditionalOnMissingProperty`, which takes a list of names.
 
-**`@ConditionalOnBean` and `@ConditionalOnMissingBean` match by type.** They use the same bean set as
-`getRegisteredBeanTypes()`, which is the *potential* bean set, so a bean that is itself disabled by a
-condition still counts as present. The qualifiers of a bean are not part of the question.
+**`@ConditionalOnBean` and `@ConditionalOnMissingBean`** evaluate against the potential bean set of the deployment via `ConditionContext.hasBean(...)`. A bean vetoed by a condition may still count as present for evaluation, and matching can include qualifier types when specified by the annotation.
 
 ---
 
@@ -422,9 +411,7 @@ be part of the deployment.
 
 ### Which conditions should the specification define?
 
-The prototype ships the three conditions that cover the common cases - property, class and bean presence -
-each with a counterpart that inverts it, named after the Spring annotations. They are deliberately small: a
-condition that needs more than the prototype can express is written by the application.
+The API provides built-in conditions for common cases - property, class, and bean presence - each with an inverse counterpart, named after familiar Spring-style annotations. They are intentionally small and composable.
 
 One difference from Spring is worth pointing out. Spring's class conditions take `Class<?>` values, and they
 work because Spring reads the annotation metadata without loading the classes. CDI has no such reading: an
@@ -474,8 +461,7 @@ when the answer is not stable.
 ### What about a condition that needs the container?
 
 A condition cannot inject beans, because at evaluation time the container is not able to create them. It
-reads the deployment through `getRegisteredBeanTypes()`, which reports the types and not the instances. A
-condition that needs a bean instance has to be expressed as a producer or a decorated bean instead.
+reads the deployment through `ConditionContext.hasBean(...)` (and class/property checks), not through bean instances. A condition that needs a bean instance must be modeled differently (for example, via producer or runtime logic).
 
 ### Is the name right?
 
@@ -498,40 +484,19 @@ suite runs against Weld 6 through Weld JUnit5, and is verified on Java 21 and Ja
 
 ```
 api/src/main/java/io/github/fludakit/conditional/
-    Conditional.java              <- the annotation, a CDI stereotype
-    Conditionals.java             <- the container of the repeated annotation
-    Condition.java                <- the SPI
-    ConditionContext.java         <- the CDI-native view
+    Conditional.java
+    Conditionals.java
+    Condition.java
+    ConditionContext.java
+    builtin/
+        ConditionalOn*.java / On*Condition.java
 
 full/src/main/java/io/github/fludakit/conditional/full/
-    FullConditionalExtension.java <- the portable extension
-    builtin/
-        ConditionalOnProperty.java        <- the built-in conditions
-        ConditionalOnMissingProperty.java
-        ConditionalOnClass.java
-        ConditionalOnMissingClass.java
-        ConditionalOnBean.java
-        ConditionalOnMissingBean.java
-        OnPropertyCondition.java          <- the conditions behind them
-        OnMissingPropertyCondition.java
-        OnClassCondition.java
-        OnMissingClassCondition.java
-        OnBeanCondition.java
-        OnMissingBeanCondition.java
-    internal/
-        ConditionResolver.java           <- collects the conditions of a bean
-        ConditionInvoker.java            <- instantiates a condition and asks it
-        DefaultConditionContext.java     <- the context implementation
-        DeploymentModel.java             <- the potential bean set
-        CandidateBean.java               <- the bean types of one bean
+    FullConditionalExtension.java
 
 lite/src/main/java/io/github/fludakit/conditional/lite/
-    ConditionalExtension.java <- the build compatible extension
-    AnnotationProxyFactory.java    <- builds the annotation of the language model
-    internal/
-        LiteConditionResolver.java  <- collects the conditions of a bean
-        ConditionInvoker.java       <- instantiates a condition and asks it
-        LiteConditionContext.java   <- the context implementation
+    LiteConditionalExtension.java
+    AnnotationProxyFactory.java
 ```
 
 ## License

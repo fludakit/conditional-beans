@@ -4,14 +4,11 @@ import java.lang.annotation.Annotation;
 import java.util.Optional;
 
 /**
- * The CDI-native view available to a {@link Condition} while it is being evaluated.
+ * A read-only view of deployment data available to a {@link Condition} during evaluation.
  * <p>
- * Everything exposed here is a CDI concept. There is deliberately no general-purpose environment, no
- * property resolver and no resource loader: a condition sees the classpath of the deployment, the beans
- * that are part of it, and the configuration of the process as system properties and environment variables.
- * </p>
- * <p>
- * The context is valid only for the duration of one evaluation and must not be retained.
+ * The context exposes only the information needed to make bootstrap-time activation decisions: configuration
+ * properties, classpath presence, and the potential bean set of the deployment. Implementations are valid
+ * only for a single evaluation and must not be retained.
  * </p>
  *
  * @see Condition
@@ -20,44 +17,37 @@ import java.util.Optional;
 public interface ConditionContext {
 
     /**
-     * The value of a configuration entry, taken from the system properties and then from the environment
-     * variables.
+     * Returns the value of a configuration property.
      * <p>
-     * A dotted name is also matched against the relaxed environment variable form, so {@code app.country}
-     * also resolves {@code APP_COUNTRY}.
+     * Implementations typically resolve values from system properties and environment variables. A dotted key
+     * may also be matched in a relaxed environment-variable form (for example, {@code app.country} and
+     * {@code APP_COUNTRY}).
      * </p>
      *
-     * @param key the name of the configuration entry
-     * @return the value, or {@link Optional#empty()} when the entry is not configured
+     * @param key the property name
+     * @return the configured value, or {@link Optional#empty()} if absent
      */
-    Optional<String> getEnvironmentValue(String key);
+    Optional<String> getProperty(String key);
 
     /**
-     * Whether a class is available to the deployment. The name form is the useful one, because it does not
-     * force the class to be loaded.
+     * Checks whether all named classes are available to the deployment.
      *
-     * @param className the fully qualified class name
-     * @return {@code true} when the class is available
+     * @param className fully qualified class names to check
+     * @return {@code true} if every class is present; {@code false} otherwise
      */
     boolean hasClass(String... className);
 
-
     /**
-     * Whether a bean of the given type, carrying the given qualifiers, is part of the deployment.
+     * Checks whether a bean of the given type and qualifiers is part of the deployment.
      * <p>
-     * The qualifiers follow the rules of the CDI resolution. A bean that declares no qualifier of its own
-     * carries the {@code @Default} qualifier, and every bean carries the {@code @Any} qualifier. Asking
-     * for no qualifier at all therefore asks for a bean with the {@code @Default} qualifier, and asking
-     * for a qualifier asks for a bean that carries it.
-     * </p>
-     * <p>
-     * The answer does not depend on the order in which the beans are declared: a bean that is itself
-     * disabled by a condition still counts as present.
+     * The answer is based on the potential deployment model: it must not depend on declaration order, and a
+     * bean that is later vetoed by a condition may still be considered present for evaluation purposes.
      * </p>
      *
-     * @param beanClass  the type of the bean
-     * @param qualifiers the qualifiers the bean has to carry
-     * @return {@code true} when such a bean is part of the deployment
+     * @param beanClass  the bean type to look up
+     * @param qualifiers qualifier annotation types required on the matching bean; if empty, the lookup matches
+     *                   by type
+     * @return {@code true} if a matching bean exists; {@code false} otherwise
      */
     @SuppressWarnings("unchecked")
     boolean hasBean(Class<?> beanClass, Class<? extends Annotation>... qualifiers);

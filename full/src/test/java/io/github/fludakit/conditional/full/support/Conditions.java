@@ -36,7 +36,7 @@ public final class Conditions {
 
         @Override
         public boolean matches(ConditionContext context, Annotation annotation) {
-            return "BR".equals(context.getEnvironmentValue("app.country").orElse(null));
+            return "BR".equals(context.getProperty("app.country").orElse(null));
         }
     }
 
@@ -45,7 +45,7 @@ public final class Conditions {
 
         @Override
         public boolean matches(ConditionContext context, Annotation annotation) {
-            return "PT".equals(context.getEnvironmentValue("app.country").orElse(null));
+            return "PT".equals(context.getProperty("app.country").orElse(null));
         }
     }
 

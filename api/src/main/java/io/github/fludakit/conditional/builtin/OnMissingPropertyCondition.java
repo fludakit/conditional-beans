@@ -11,7 +11,7 @@ public final class OnMissingPropertyCondition implements Condition<ConditionalOn
     @Override
     public boolean matches(ConditionContext context, ConditionalOnMissingProperty annotation) {
         for (String name : annotation.name()) {
-            if (context.getEnvironmentValue(name).isPresent()) {
+            if (context.getProperty(name).isPresent()) {
                 return false;
             }
         }

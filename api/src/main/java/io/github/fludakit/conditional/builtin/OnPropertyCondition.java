@@ -12,7 +12,7 @@ public final class OnPropertyCondition implements Condition<ConditionalOnPropert
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnProperty annotation) {
-        Optional<String> value = context.getEnvironmentValue(annotation.name());
+        Optional<String> value = context.getProperty(annotation.name());
         if (value.isEmpty()) {
             return false;
         }

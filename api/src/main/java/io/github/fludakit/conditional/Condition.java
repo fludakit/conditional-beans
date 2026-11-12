@@ -3,36 +3,14 @@ package io.github.fludakit.conditional;
 import java.lang.annotation.Annotation;
 
 /**
- * Decides whether a bean participates in the deployment.
+ * Determines whether an annotated bean, producer method, or producer field should be active.
  * <p>
- * A condition is a plain class with a no-argument constructor. The container instantiates it directly and
- * never through CDI, because at evaluation time the container is not yet able to inject anything. That is
- * why a condition reaches deployment state through {@link ConditionContext} instead of through injected
- * beans.
- * </p>
- * <p>
- * A condition is written against the annotation that declares it, so that it can read the values of that
- * annotation without reflection. The annotation is either the annotation that carries the
- * {@link Conditional} meta-annotation - the way the built-in conditions are declared - or the
- * {@link Conditional} annotation itself, when the condition is declared directly on the bean.
+ * Implementations are instantiated by the container (not managed by CDI) and must have a public no-argument
+ * constructor. Conditions should be deterministic, side-effect free, and rely only on the provided
+ * {@link ConditionContext} and declaring annotation.
  * </p>
  *
- * <pre>{@code
- * public class BrazilCondition implements Condition<ConditionalOnCountry> {
- *
- *     @Override
- *     public boolean matches(ConditionContext context, ConditionalOnCountry annotation) {
- *         return "BR".equals(context.getEnvironmentValue(annotation.country()).orElse(null));
- *     }
- * }
- * }</pre>
- * <p>
- * Implementations must be side-effect free and deterministic for a given deployment, and must not retain
- * the {@link ConditionContext} for later use on another thread. Conditions are evaluated once, during
- * bootstrap.
- * </p>
- *
- * @param <A> the annotation that declares the condition
+ * @param <A> the annotation type that declares or parameterizes the condition
  * @see Conditional
  * @see ConditionContext
  */
@@ -40,11 +18,11 @@ import java.lang.annotation.Annotation;
 public interface Condition<A extends Annotation> {
 
     /**
-     * Evaluates the condition against the annotation that declares it.
+     * Evaluates this condition.
      *
-     * @param context the CDI-native view of the deployment
-     * @param annotation the annotation that declares the condition
-     * @return {@code true} when the bean satisfies the condition, {@code false} when it has to be vetoed
+     * @param context    deployment context available during bootstrap/build evaluation
+     * @param annotation the annotation instance that declared this condition
+     * @return {@code true} if the condition matches and the element may remain enabled; {@code false} otherwise
      */
     boolean matches(ConditionContext context, A annotation);
 }

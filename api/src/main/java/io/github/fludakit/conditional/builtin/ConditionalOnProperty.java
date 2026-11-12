@@ -9,24 +9,11 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Enables a bean only when the named configuration entries are present and have the
- * expected values.
+ * Activates the annotated element only when a configuration property is present and, optionally, matches a
+ * specific value.
  * <p>
- * The entries are read from the system properties and then from the environment variables, exactly like
- * {@code ConditionContext.getEnvironmentValue(String)} does, so a dotted name also matches the relaxed
- * environment variable form.
+ * Property lookup is delegated to {@link io.github.fludakit.conditional.ConditionContext#getProperty(String)}.
  * </p>
- * <p>
- * Every named entry has to be present. When {@link #havingValue()} is not empty, the value of the entry has
- * to be equal to it, ignoring the case. All entries have to match.
- * </p>
- *
- * <pre>{@code
- * @ApplicationScoped
- * @ConditionalOnProperty(name = "app.country", havingValue = "BR")
- * public class BrazilTaxCalculator implements TaxCalculator {
- * }
- * }</pre>
  *
  * @see ConditionalOnMissingProperty
  */

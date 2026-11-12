@@ -338,7 +338,7 @@ public class LiteConditionalExtension implements BuildCompatibleExtension {
     private ConditionContext createBuildContext(Object currentTarget) {
         return new ConditionContext() {
             @Override
-            public Optional<String> getEnvironmentValue(String key) {
+            public Optional<String> getProperty(String key) {
                 String val = System.getProperty(key);
                 if (val == null) {
                     val = System.getenv(key);

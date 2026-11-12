@@ -34,12 +34,12 @@ public final class LiteFixtures {
         }
     }
 
-    /** A condition driven by the {@code lite.enabled} configuration entry. */
+    /** A condition driven by the {@code lite.enabled} configuration property. */
     public static class EnabledByProperty implements Condition<Annotation> {
 
         @Override
         public boolean matches(ConditionContext context, Annotation annotation) {
-            return context.getEnvironmentValue("lite.enabled").isPresent();
+            return context.getProperty("lite.enabled").isPresent();
         }
     }
 

@@ -226,7 +226,7 @@ public class FullConditionalExtension implements Extension {
     private ConditionContext createRuntimeContext(Annotated currentTarget) {
         return new ConditionContext() {
             @Override
-            public Optional<String> getEnvironmentValue(String key) {
+            public Optional<String> getProperty(String key) {
                 String val = System.getProperty(key);
                 if (val == null) {
                     val = System.getenv(key);
