@@ -18,10 +18,10 @@ import java.lang.annotation.Target;
  * </p>
  *
  * <pre>{@code
- * @Conditional(BrazilCondition.class)
+ * @Conditional(ChinaCondition.class)
  * @Conditional(DatabaseAvailable.class)
  * @ApplicationScoped
- * public class BrazilTaxCalculator implements TaxCalculator {
+ * public class ChinaTaxCalculator implements TaxCalculator {
  * }
  * }</pre>
  * <p>

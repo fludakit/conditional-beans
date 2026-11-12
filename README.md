@@ -27,34 +27,28 @@ This is a working prototype for the Jakarta EE CDI issues
 
 ## Quick start
 
-Add the artifact to the deployment and declare a condition on a bean. For example, enable a bean only on supported operating systems by reading the `os.name` system property:
+Add the artifact to the deployment and declare a condition on a bean:
 
 ```java
-public class SupportedOsCondition implements Condition<Conditional> {
+public class ChinaCondition implements Condition<Conditional> {
 
     @Override
     public boolean matches(ConditionContext context, Conditional annotation) {
-        String osName = context.getProperty("os.name").orElse("").toLowerCase();
-
-        boolean isWindows = osName.contains("win");
-        boolean isMac = osName.contains("mac");
-        boolean isLinux = osName.contains("nux") || osName.contains("nix");
-
-        return isWindows || isMac || isLinux;
+        return "CN".equals(context.getProperty("app.country").orElse(null));
     }
 }
 ```
 
 ```java
 @ApplicationScoped
-@Conditional(SupportedOsCondition.class)
-public class NativeService implements Service {
+@Conditional(ChinaCondition.class)
+public class ChinaTaxCalculator implements TaxCalculator {
 }
 ```
 
-When the current OS does not match, the bean is **not part of the deployment**: it is not injectable, it does
+When `app.country` is not `CN`, the bean is **not part of the deployment**: it is not injectable, it does
 not show up in `BeanManager.getBeans(...)`, and it produces no `ProcessBean` event. An injection point that
-requires it fails the deployment with an unsatisfied-dependency error, making missing beans explicit.
+requires it fails the deployment with an unsatisfied-dependency error, making a missing bean explicit.
 
 The extension is registered through `META-INF/services/jakarta.enterprise.inject.spi.Extension`, so it is
 active in every deployment that has the artifact on the classpath.
@@ -82,9 +76,9 @@ Applicable to a bean class, a producer method and a producer field.
 
 ```java
 @ApplicationScoped
-@Conditional(SupportedOsCondition.class)
+@Conditional(ChinaCondition.class)
 @Conditional(DatabaseAvailable.class)
-public class NativeService implements Service {
+public class ChinaTaxCalculator implements TaxCalculator {
 }
 ```
 
@@ -124,11 +118,11 @@ A condition is a plain class with a no-argument constructor. It is **written aga
 declares it**, so that it can read the values of that annotation without reflection:
 
 ```java
-public class BrazilCondition implements Condition<ConditionalOnCountry> {
+public class ChinaCondition implements Condition<ConditionalOnCountry> {
 
     @Override
     public boolean matches(ConditionContext context, ConditionalOnCountry annotation) {
-        return "BR".equals(context.getProperty(annotation.country()).orElse(null));
+        return "CN".equals(context.getProperty(annotation.country()).orElse(null));
     }
 }
 ```
@@ -189,8 +183,8 @@ They follow the Spring naming, and each of them has a counterpart that inverts i
 
 ```java
 @ApplicationScoped
-@ConditionalOnProperty(name = "app.country", havingValue = "BR")
-public class BrazilTaxCalculator implements TaxCalculator {
+@ConditionalOnProperty(name = "app.country", havingValue = "CN")
+public class ChinaTaxCalculator implements TaxCalculator {
 }
 
 @ApplicationScoped
@@ -226,13 +220,13 @@ therefore declare an annotation of its own that carries a condition, the way Spr
 ```java
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-@Conditional(SupportedOsCondition.class)
-public @interface SupportedOs {
+@Conditional(ChinaCondition.class)
+public @interface Chinese {
 }
 
 @ApplicationScoped
-@SupportedOs
-public class NativeService implements Service {
+@Chinese
+public class ChinaTaxCalculator implements TaxCalculator {
 }
 ```
 

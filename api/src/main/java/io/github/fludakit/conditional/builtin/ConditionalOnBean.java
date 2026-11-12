@@ -20,7 +20,7 @@ import java.lang.annotation.Target;
  * <pre>{@code
  * @ApplicationScoped
  * @ConditionalOnBean(PaymentService.class)
- * public class BrazilPaymentService implements PaymentService {
+ * public class ChinaPaymentService implements PaymentService {
  * }
  * }</pre>
  *
