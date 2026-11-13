@@ -21,7 +21,7 @@ This is a working prototype for the Jakarta EE CDI issues
 |---|---|---|
 | `fluda-conditional-beans-api` | `io.github.fludakit.conditional` | Core API (`@Conditional`, `@Conditionals`, `Condition`, `ConditionContext`) and built-in conditional annotations/condition implementations. |
 | `fluda-conditional-beans-full` | `io.github.fludakit.conditional.full` | CDI Full runtime: portable extension that evaluates conditions at bootstrap and vetoes non-matching beans/producers. |
-| `fluda-conditional-beans-lite` | `io.github.fludakit.conditional.lite` | CDI Lite runtime: build compatible extension that evaluates conditions during build/enhancement with deferred validation. |
+| `fluda-conditional-beans-lite` | `io.github.fludakit.conditional.lite` | CDI Lite runtime: build-compatible extension that evaluates conditions during build/enhancement with deferred validation. |
 
 ---
 
@@ -135,10 +135,10 @@ The type argument decides which annotation the condition is handed:
 | `Condition<ConditionalOnProperty>` | the `@ConditionalOnProperty` annotation | `@ConditionalOnProperty(...)` on the bean |
 | `Condition<MyOwnAnnotation>` | the `@MyOwnAnnotation` annotation | an annotation of the application that carries `@Conditional` |
 
-The choice is made by the type of the condition, so it is checked by the compiler and it stays consistent
-for the direct form, the meta-annotation form, the stereotype form and the repeatable form.
+The choice is made by the type of the condition, so it is checked by the compiler, and it stays consistent
+for the direct form, the meta-annotation form, the stereotype form, and the repeatable form.
 
-**The container instantiates the condition directly, never through CDI.** At evaluation time the container
+**The container instantiates the condition directly, never through CDI.** At evaluation time, the container
 cannot inject anything, so a condition reaches deployment state through `ConditionContext` rather than
 through injected beans. A condition must therefore be side-effect free and deterministic for a given
 deployment.
@@ -193,7 +193,7 @@ public class ModernIntegration {
 }
 ```
 
-They can be used on a bean class, a producer method, a producer field and a stereotype, and they compose
+They can be used on a bean class, a producer method, a producer field, and a stereotype, and they compose
 with a condition that is written by hand.
 
 **The class conditions take class names, not classes.** This is a deliberate difference from Spring. In CDI
@@ -208,7 +208,7 @@ has to have, compared ignoring the case. An empty `havingValue` - the default - 
 annotation asks for the presence of the entry and nothing more. The entries that are not required are covered
 by `@ConditionalOnMissingProperty`, which takes a list of names.
 
-**`@ConditionalOnBean` and `@ConditionalOnMissingBean`** evaluate against the potential bean set of the deployment via `ConditionContext.hasBean(...)`. A bean vetoed by a condition may still count as present for evaluation, and matching can include qualifier types when specified by the annotation.
+**`@ConditionalOnBean` and `@ConditionalOnMissingBean`** evaluate against the potential bean set of the deployment via `ConditionContext.hasBean(...)`. A bean vetoed by a condition may still count as present for evaluation, and matching can include qualifier types when the annotation specifies them.
 
 ---
 
@@ -243,7 +243,7 @@ public @interface WithoutLegacy {
 ```
 
 A bean may carry a composed annotation **and** a condition of its own. Both are evaluated, and the bean is
-enabled only when every one of them matches.
+enabled only when both match.
 
 Because `@Conditional` is a stereotype, the container itself takes part: `Bean.getStereotypes()` reports
 it, and a stereotype that declares `@Conditional` inherits it. That is the CDI counterpart of the
@@ -307,7 +307,7 @@ order-sensitive, and the validation step is what makes the difference visible.
 - **Conditions are evaluated at bootstrap only.** Selecting an implementation per HTTP request is a different
   problem and needs a different mechanism, such as interception or decoration.
 - **Configuration comes from system properties and environment variables.** Jakarta Config is the intended
-  long-term source; it is not ready yet, and that is a reason to keep the surface minimal.
+  long-term source; it isn't ready yet, which is why we keep the surface minimal.
 
 ### Failure semantics
 
@@ -330,14 +330,13 @@ Failing fast is deliberate - a silently disabled bean is far harder to diagnose 
 
 ### The API
 
-Three core types, modelled on Spring's `@Conditional` and Micronaut's `@Requires`, but expressed in CDI
+Three core types, modeled on Spring's `@Conditional` and Micronaut's `@Requires`, but expressed in CDI
 terms only:
 
 ```java
-@Conditional(Class<? extends Condition<?>>[] value())   // the annotation
+@Conditional(Class<? extends Condition<?>>[] value())    // the annotation
 Condition<A extends Annotation>                          // the SPI
 ConditionContext                                         // the CDI-native view
-}
 ```
 
 `@Conditional` is repeatable, so several conditions may be declared on one element, one annotation each.
@@ -346,7 +345,6 @@ theirs: a top-level annotation in the plural form.
 
 ```java
 @Conditionals(Conditional[] value())                  // the container
-}
 ```
 
 | Annotation | Container | Source |
@@ -363,7 +361,7 @@ theirs: a top-level annotation in the plural form.
 | `@QueryHint` | `@QueryHints` | Micronaut Data |
 | `@JoinColumn` | `@JoinColumns` | Micronaut Data |
 
-Micronaut's `@Requires` is its own conditional annotation, so the closest analogue in the ecosystem names
+Micronaut's `@Requires` is its own conditional annotation, so the closest analog in the ecosystem names
 its container the same way. Spring's `@Conditional` is not repeatable at all - Spring expresses several
 conditions through composed meta-annotations instead - so of the two frameworks, only Micronaut has a
 repeatable condition annotation.
@@ -390,7 +388,7 @@ This is the sharpest question in the discussion, and it deserves a precise answe
 
 `BeanManager.getBeans(...)` is indeed **not** usable while the container is bootstrapping - Weld enforces
 this with a container-state check, and `AfterBeanDiscovery` is the first point at which it becomes legal.
-That is precisely why the prototype does **not** use `getBeans`.
+That's why the prototype does **not** use `getBeans`.
 
 Instead, the set of beans that could be part of the deployment is collected from the `ProcessAnnotatedType`
 events. The container fires those for every discovered type before it fires the first
@@ -426,13 +424,13 @@ is declared as a `@Stereotype` and may be used as a meta-annotation.
 
 This has a pleasant consequence: the container itself takes part. `Bean.getStereotypes()` reports
 `@Conditional`, and a stereotype that declares `@Conditional` inherits it, exactly as CDI defines
-stereotype inheritance. The condition is nevertheless evaluated by the extension, because the veto point is
+stereotype inheritance. The extension nevertheless evaluates the condition, because the veto point is
 still `ProcessBeanAttributes`.
 
 ### What about synthetic beans?
 
 Not covered, and deliberately so. `ProcessBeanAttributes` does not fire for them, and an extension that adds
-a synthetic bean is in a better position to decide whether it should exist at all.
+a synthetic bean is better positioned to decide whether it should exist at all.
 
 ### What about EAR and WAR modularity?
 
@@ -444,13 +442,13 @@ visibility.
 ### What about CDI Lite?
 
 CDI Lite has no portable extensions, so the mechanism has to be different: the conditions are evaluated
-while the application is built, by a build compatible extension.
+while the application is built, by a build-compatible extension.
 
 The prototype implements that path in the `lite` module, and it has to work around a real limitation of
-the specification: the discovery step of a build compatible extension cannot enumerate the classes of the
+the specification: the discovery step of a build-compatible extension cannot enumerate the classes of the
 deployment, so the bean graph is not known while the conditions are evaluated. The prototype therefore
-collects the classes while it enhances them, collects the registered beans afterwards, and evaluates the
-conditions that depend on the bean graph one more time when the graph is complete. When the answer changed,
+collects the classes while it enhances them, collects the registered beans afterward, and evaluates the
+conditions that depend on the bean graph one more time when the graph is complete. When the answer changes,
 the build fails with a message that names the element and the condition.
 
 A specification for CDI Lite would have to say more about this. The question it has to answer is whether a
@@ -459,8 +457,8 @@ when the answer is not stable.
 
 ### What about a condition that needs the container?
 
-A condition cannot inject beans, because at evaluation time the container is not able to create them. It
-reads the deployment through `ConditionContext.hasBean(...)` (and class/property checks), not through bean instances. A condition that needs a bean instance must be modeled differently (for example, via producer or runtime logic).
+A condition cannot inject beans because, at evaluation time, the container hasn't created them yet. It
+reads the deployment plan through `ConditionContext.hasBean(...)` (and class/property checks), not through bean instances. A condition that needs a bean instance must be modeled differently (for example, via producer or runtime logic).
 
 ### Is the name right?
 
