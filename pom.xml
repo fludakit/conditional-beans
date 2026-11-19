@@ -12,6 +12,7 @@
     </parent>
 
     <artifactId>fluda-conditional-beans-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>FluDa :: Conditional Beans</name>
