@@ -496,6 +496,11 @@ lite/src/main/java/io/github/fludakit/conditional/lite/
     AnnotationProxyFactory.java
 ```
 
+## Documentation
+
+See the [Conditional Beans documentation](https://fludakit.github.io/conditional-beans/) for the API reference,
+the built-in conditions, and getting started.
+
 ## License
 
 Apache License 2.0.

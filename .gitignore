@@ -5,3 +5,4 @@ target/
 .DS_Store
 *.log
 .mvn/target/
+site/
