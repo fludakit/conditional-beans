@@ -134,3 +134,8 @@ A read-only view of the deployment data available during evaluation. It exposes 
 ## Reading order
 
 Start with [getting started](getting-started.md) to add the artifact, declare your first condition, and pick the runtime that fits your deployment.
+
+
+---
+
+[FluDa Toolkit — browse all modules](https://fludakit.github.io/){ .md-button .md-button--primary }
